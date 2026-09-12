@@ -2,7 +2,7 @@
 
 Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
-**Progress:** Steps 0 and 1 complete. **Next action: Step 2.**
+**Progress:** Steps 0 through 3 complete. **Next action: Step 4.**
 
 | | |
 |---|---|
@@ -142,10 +142,12 @@ Recorded because they will recur.
 | `name can no longer contain capital letters` | `create-next-app` takes the package name from the folder; npm forbids capitals | Use an all-lowercase folder path |
 | `cannot access the file because it is being used by another process` | VS Code holds a lock on its open workspace folder | Close VS Code, or work in a different path |
 | `Permission denied (publickey)` on `ssh -T git@github.com` | No SSH key registered on this machine | Use the HTTPS remote instead — Git Credential Manager opens a browser login. Set up SSH another day |
+| `warning: LF will be replaced by CRLF` on every `git add` | `core.autocrlf=true` on Windows, with no `.gitattributes` to override it | Commit `.gitattributes` with `* text=auto eol=lf`. Fixed before Step 4 |
+| `.env.example` silently never gets tracked | `.gitignore` has `.env*`, which matches the example file as well as the secret one | Add `!.env.example` on the line *after* it. Fixed before Step 4 |
 
 ---
 
-## Step 2 — Set the ground rules for Claude Code (10 min)
+## Step 2 — Set the ground rules for Claude Code (10 min) ✅ DONE
 
 **Why this comes before any feature code:** these rules govern every prompt that
 follows. Setting them after the first module means the first module doesn't
@@ -221,7 +223,7 @@ git push
 
 ---
 
-## Step 3 — Design tokens (10 min)
+## Step 3 — Design tokens (10 min) ✅ DONE
 
 **Why now, with nothing to style:** theming applied later means touching every
 component that already exists. Defining six CSS variables while there are zero
@@ -283,8 +285,8 @@ values, and confirm .env.local is gitignored.
 
 1. Create `.env.local` in the repo root with your Supabase URL and publishable key
    from the Step 0 scratch file.
-2. Confirm `.env.local` is listed in `.gitignore`. If it isn't, add it **before**
-   your next commit.
+2. ✅ Already handled — `.gitignore` covers `.env.local` via `.env*`, and the
+   `!.env.example` negation on the next line keeps the example file trackable.
 3. Add the same two variables in Vercel: **Project → Settings → Environment
    Variables**.
 
@@ -594,8 +596,8 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 |---|---|
 | 0. Accounts ✅ | 20 |
 | 1. Scaffold and deploy ✅ | 25 |
-| 2. Ground rules | 10 |
-| 3. Tokens | 10 |
+| 2. Ground rules ✅ | 10 |
+| 3. Tokens ✅ | 10 |
 | 4. Supabase wiring | 30 |
 | 5. Google OAuth | 40 |
 | 6. Schema and RLS | 30 |
