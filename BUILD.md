@@ -2,7 +2,7 @@
 
 Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
-**Progress:** Steps 0 through 3 complete. **Next action: Step 4.**
+**Progress:** Steps 0 through 4 complete. **Next action: Step 5.**
 
 | | |
 |---|---|
@@ -256,7 +256,15 @@ Commit. Push. Check the live URL again.
 
 ---
 
-## Step 4 — Supabase client wiring (30 min)
+## Step 4 — Supabase client wiring (30 min) ✅ DONE
+
+> **Built as `src/proxy.ts`, not `middleware.ts`.** Next.js 16 deprecated the
+> `middleware` file convention and renamed it to `proxy`; the exported function
+> is `proxy` too. `middleware.ts` still runs but warns on every build. Supabase's
+> own AI-prompt page still shows the old name and contains a broken import
+> (`next/handlers` instead of `next/headers`) — their main server-side guide is
+> the one that is current. Verified the `setAll` signature and `getClaims`
+> against the shipped type definitions in `node_modules` rather than the docs.
 
 **What this step does:** gives your app three ways to talk to Supabase — from the
 browser, from Server Components, and from middleware that keeps the login session
@@ -598,7 +606,7 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 | 1. Scaffold and deploy ✅ | 25 |
 | 2. Ground rules ✅ | 10 |
 | 3. Tokens ✅ | 10 |
-| 4. Supabase wiring | 30 |
+| 4. Supabase wiring ✅ | 30 |
 | 5. Google OAuth | 40 |
 | 6. Schema and RLS | 30 |
 | 7. Day log form | 60 |

@@ -34,6 +34,9 @@ project shipping.
 
 - Enable RLS on every table in the same migration that creates it.
 - Never hardcode a user id. Every query filters by the authenticated user.
+- Server Actions are not separate routes — a proxy matcher that skips a path
+  also skips Server Actions on it. Every Server Action must check auth itself.
+  RLS is the backstop, not the only line.
 - Colours come from CSS variables in `globals.css`. Never inline a hex value.
 - Server Components by default. `"use client"` only where interactivity requires
   it.
