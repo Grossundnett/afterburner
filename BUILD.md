@@ -2,7 +2,11 @@
 
 Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
-**Progress:** Steps 0 through 4 complete. **Next action: Step 5.**
+**Progress:** Steps 0 through 4 complete. **Step 5 is in progress — all manual
+configuration in Google Cloud and Supabase is done. The code half has not been
+started.** Next action: build `/login`, `/auth/callback`, the sign-out action,
+route protection in `src/proxy.ts`, and show the signed-in email on the home
+page.
 
 | | |
 |---|---|
@@ -52,7 +56,7 @@ Browser work, before the editor.
 - [x] **GitHub** — private repo `Grossundnett/afterburner`, created empty
 - [x] **Supabase** — org created, project `afterburner`, region South Asia (Mumbai), automatic RLS enabled
 - [x] **Vercel** — signed up via GitHub, Hobby (free) plan
-- [ ] **Google Cloud Console** — create a project named `afterburner`. *Not needed until Step 5; do it then.*
+- [x] **Google Cloud Console** — project `afterburner` created (ID `afterburner-508712`). Done at Step 5, see that section for the full configuration record.
 
 ### Values to keep in a scratch file
 
@@ -132,7 +136,7 @@ None of it applies to a personal app with one user.
 *Hobby plan terms cover non-commercial use — fine for a personal tracker and for
 showing recruiters. Charging for it would need Pro.*
 
-### Windows gotchas hit along the way
+### Environment gotchas hit along the way
 
 Recorded because they will recur.
 
@@ -144,6 +148,8 @@ Recorded because they will recur.
 | `Permission denied (publickey)` on `ssh -T git@github.com` | No SSH key registered on this machine | Use the HTTPS remote instead — Git Credential Manager opens a browser login. Set up SSH another day |
 | `warning: LF will be replaced by CRLF` on every `git add` | `core.autocrlf=true` on Windows, with no `.gitattributes` to override it | Commit `.gitattributes` with `* text=auto eol=lf`. Fixed before Step 4 |
 | `.env.example` silently never gets tracked | `.gitignore` has `.env*`, which matches the example file as well as the secret one | Add `!.env.example` on the line *after* it. Fixed before Step 4 |
+| Google sign-in returns access denied, and it looks like a bad redirect URI | The consent screen is in **Testing** publishing status, which only admits accounts on the test-user list | Add the Google account under Audience → Test users. Chase this *before* re-checking redirect URIs — the error does not say the account is the problem |
+| Google rejects the callback URL in **Authorised JavaScript origins** | That field accepts an origin only — scheme, host and port, never a path | Leave JavaScript origins empty. The callback URL belongs in **Authorised redirect URIs** alone |
 
 ---
 
@@ -304,7 +310,7 @@ common first-deploy failure. Do it now while the values are in front of you.
 
 ---
 
-## Step 5 — Google OAuth (40 min)
+## Step 5 — Google OAuth (40 min) 🟡 MANUAL CONFIG DONE, CODE NOT STARTED
 
 **The fiddliest step in Phase 1, and most of it is clicking, not coding.** Three
 systems have to agree with each other: Google issues the credentials, Supabase
@@ -326,6 +332,39 @@ Under URL Configuration, add **both** of these to the redirect allow-list:
 - `https://afterburner-two.vercel.app/**`
 
 Missing the second one is why login works locally and fails in production.
+
+### ✅ What is already configured — do not redo this
+
+All three dashboards are set up. Recorded here so it does not get repeated.
+
+| Where | Setting | Value |
+|---|---|---|
+| Google Cloud | Project name | `afterburner` |
+| Google Cloud | Project ID | `afterburner-508712` |
+| Google Cloud | Consent screen | External, publishing status **Testing** |
+| Google Cloud | Test users | Two personal Gmail accounts added |
+| Google Cloud | OAuth client name | `afterburner-web`, Web application |
+| Google Cloud | Authorised redirect URI | `https://ijnemkslclmpjhewydkk.supabase.co/auth/v1/callback` |
+| Google Cloud | Authorised JavaScript origins | **Left empty, deliberately** |
+| Supabase | Google provider | Enabled, client ID and secret pasted |
+| Supabase | URL Configuration | Site URL plus both redirect URLs set |
+
+Two things here are worth remembering rather than rediscovering, and both are in
+the gotchas table above:
+
+**Testing publishing status only admits listed test users.** Any other Google
+account gets an access-denied screen that reads like a redirect-URI problem. If
+sign-in fails for an account, check the test-user list before touching URLs.
+
+**Authorised JavaScript origins rejects paths.** It takes an origin only, so
+pasting the callback URL there fails validation. It stays empty — Supabase does
+the token exchange server-side, so the browser never needs a registered origin.
+
+### ⬜ What is left — the code half
+
+Nothing in `src/` exists for auth yet. Still to build: `/login`,
+`/auth/callback`, a sign-out action, route protection in `src/proxy.ts`, and the
+signed-in email shown on the home page.
 
 **Prompt:**
 
@@ -607,7 +646,7 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 | 2. Ground rules ✅ | 10 |
 | 3. Tokens ✅ | 10 |
 | 4. Supabase wiring ✅ | 30 |
-| 5. Google OAuth | 40 |
+| 5. Google OAuth 🟡 | 40 |
 | 6. Schema and RLS | 30 |
 | 7. Day log form | 60 |
 | 8. List view | 30 |
