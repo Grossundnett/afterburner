@@ -2,11 +2,34 @@
 
 Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
-**Progress:** Steps 0 through 4 complete. **Step 5 is in progress — all manual
-configuration in Google Cloud and Supabase is done. The code half has not been
-started.** Next action: build `/login`, `/auth/callback`, the sign-out action,
-route protection in `src/proxy.ts`, and show the signed-in email on the home
-page.
+## Where we are
+
+**5 of 11 steps fully done** (0, 1, 2, 3, 4). **1 partially done** (5).
+**5 not started** (6, 7, 8, 9, 10).
+
+**Step 5 is half finished.** Every dashboard — Google Cloud, Supabase — is
+configured. **No auth code exists.** Nothing in `src/` does sign-in, and the app
+still cannot log anybody in.
+
+**Next action:** the code half of Step 5 — `/login`, `/auth/callback`, a
+sign-out action, route protection in `src/proxy.ts`, and the signed-in email on
+the home page.
+
+**Realistically ~3 hours of build time left in Phase 1**, against the original
+4.5 hour estimate:
+
+| Remaining | Minutes |
+|---|---|
+| 5. Google OAuth — code half only, dashboards done | 30 |
+| 6. Schema and RLS | 30 |
+| 7. Day log form | 60 |
+| 8. List view | 30 |
+| 9. Ship and verify | 20 |
+| 10. Set the gate | 5 |
+| | **~2 hr 55 min** |
+
+That assumes nothing fights back. Step 5 is the step most likely to overrun,
+because three systems have to agree on URLs and the errors are misleading.
 
 | | |
 |---|---|
@@ -39,6 +62,19 @@ They are separate documents and `AGENTS.md` references the others by name.
 | **5. Intelligence** | LLM layer over blocker history | later | 3+ months of blockers |
 
 **The gate is the most important row in this table.** Phase 2 designs a dashboard around data you don't have yet. Three weeks of logging tells you which fields you actually skip and which you wish existed. Building the dashboard first means guessing, then rebuilding.
+
+---
+
+## Standing items
+
+Not steps. Infrastructure that outlives Phase 1 and must not be forgotten.
+
+| Item | Status | Notes |
+|---|---|---|
+| **Keep-alive workflow** | ✅ Done | `.github/workflows/keep-alive.yml`. Mondays and Thursdays plus manual `workflow_dispatch`. Supabase pauses Free Plan projects after ~7 days without database activity, and the three-week logging gate is exactly when that bites. |
+| Keep-alive: point at a real table | ⬜ At Step 6 | It currently pings the PostgREST root because no tables exist yet. Supabase measures *database* activity, so once the schema lands, change the URL to `/rest/v1/days?select=id&limit=1`. |
+| GitHub disables cron on idle repos | ⚠️ Watch | Scheduled workflows are switched off automatically after 60 days with no repository activity. During a long gate, check the Actions tab occasionally, or push something. |
+| Vercel environment variables | ⬜ Verify | `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` must exist in the Vercel dashboard, not just `.env.local`. Missing them is the most common first-deploy failure. |
 
 ---
 
@@ -646,11 +682,15 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 | 2. Ground rules ✅ | 10 |
 | 3. Tokens ✅ | 10 |
 | 4. Supabase wiring ✅ | 30 |
-| 5. Google OAuth 🟡 | 40 |
+| 5. Google OAuth 🟡 dashboards done, code not started | 40 |
 | 6. Schema and RLS | 30 |
 | 7. Day log form | 60 |
 | 8. List view | 30 |
 | 9. Ship and verify | 20 |
 | | **~4.5 hrs** |
+
+Spent so far: about 1 hr 35 min across steps 0-4, plus the Step 5 dashboard
+work. **Remaining: roughly 3 hours.** See "Where we are" at the top for the
+per-step breakdown.
 
 If you run short, **steps 1 through 6 are the real evening.** Auth plus schema plus a deployed URL is a genuine milestone; the form can be tomorrow. Stopping there is a good outcome, not a failure.
