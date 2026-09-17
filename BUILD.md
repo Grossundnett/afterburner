@@ -71,8 +71,9 @@ Not steps. Infrastructure that outlives Phase 1 and must not be forgotten.
 
 | Item | Status | Notes |
 |---|---|---|
-| **Keep-alive workflow** | ✅ Done | `.github/workflows/keep-alive.yml`. Mondays and Thursdays plus manual `workflow_dispatch`. Supabase pauses Free Plan projects after ~7 days without database activity, and the three-week logging gate is exactly when that bites. |
-| Keep-alive: point at a real table | ⬜ At Step 6 | It currently pings the PostgREST root because no tables exist yet. Supabase measures *database* activity, so once the schema lands, change the URL to `/rest/v1/days?select=id&limit=1`. |
+| **Keep-alive workflow** | 🟡 Runs green, not yet doing its job | `.github/workflows/keep-alive.yml`. Mondays and Thursdays plus manual `workflow_dispatch`; a manual run passes. It pings `/auth/v1/health`, which proves the project is reachable and the key works — but that request never reaches Postgres, and Supabase measures *database* activity. Treat it as plumbing that is proven, not as pause protection. |
+| **Keep-alive: point at a real table** | ⬜ **Do this at Step 6** | One-line change: swap the URL for `/rest/v1/days?select=id&limit=1`. An anon request against an RLS-protected table returns 200 with an empty array and genuinely runs a query. This is the change that makes the workflow actually prevent pausing. |
+| Why not PostgREST today | — | `/rest/v1/` returns 401 `Only secret API keys can be used for this endpoint`, and a `service_role` key must never sit in a repository secret because it bypasses RLS. Table endpoints return 404 until the schema exists. |
 | GitHub disables cron on idle repos | ⚠️ Watch | Scheduled workflows are switched off automatically after 60 days with no repository activity. During a long gate, check the Actions tab occasionally, or push something. |
 | Vercel environment variables | ⬜ Verify | `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` must exist in the Vercel dashboard, not just `.env.local`. Missing them is the most common first-deploy failure. |
 
