@@ -24,6 +24,19 @@ jobs:
     timeout-minutes: 5
 
     steps:
+
+      - name: Probe which endpoints accept a publishable key
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          base="${SUPABASE_URL%/}"
+          for path in "/auth/v1/health" "/auth/v1/settings" "/rest/v1/days?select=id&limit=1" "/rest/v1/profiles?select=id&limit=1"; do
+            code=$(curl -s -o /tmp/b.json -w '%{http_code}' --max-time 20               -H "apikey: $SUPABASE_ANON_KEY" -H "Cache-Control: no-cache" "$base$path")
+            echo "=== $path -> HTTP $code"
+            head --bytes=220 /tmp/b.json; echo ""
+          done
+
       - name: Send an authenticated request
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
