@@ -37,22 +37,29 @@ jobs:
           # Strip any trailing slash so the path does not end up doubled.
           base="${SUPABASE_URL%/}"
 
+          # The key goes on `apikey` only. Publishable keys (sb_publishable_...)
+          # are not JWTs, so sending one as `Authorization: Bearer` makes the
+          # gateway try to parse it as a JWT and reject the request with 401.
+          # `Authorization: Bearer` is for user tokens from Supabase Auth.
           status=$(curl \
             --silent --show-error \
             --max-time 30 \
             --retry 2 --retry-delay 5 \
-            --output /dev/null \
+            --output response.json \
             --write-out '%{http_code}' \
             --header "apikey: $SUPABASE_ANON_KEY" \
-            --header "Authorization: Bearer $SUPABASE_ANON_KEY" \
             --header "Cache-Control: no-cache" \
             "$base/rest/v1/")
 
           echo "Supabase REST API responded with HTTP $status"
+          echo "--- response body (first 400 bytes) ---"
+          head --bytes=400 response.json || true
+          echo ""
+          echo "--- end of response body ---"
 
           if [ "$status" != "200" ]; then
-            echo "Expected HTTP 200. A 401 means the key is wrong or expired;"
-            echo "a 404 means the URL is wrong; a 5xx may mean the project is"
-            echo "already paused and needs restoring from the dashboard."
+            echo "Expected HTTP 200. A 401 means the key is wrong, or was sent"
+            echo "on the wrong header; a 404 means the URL is wrong; a 5xx may"
+            echo "mean the project is paused and needs restoring."
             exit 1
           fi
