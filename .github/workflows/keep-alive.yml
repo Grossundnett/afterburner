@@ -3,7 +3,24 @@ name: Keep Supabase awake
 # Supabase pauses Free Plan projects that go roughly seven days without user
 # database activity. Twice a week leaves a three-to-four day gap, which is
 # margin for GitHub's scheduler running late — cron here is best effort, not a
-# guarantee, and can be delayed under load.
+# guarantee. The first scheduled run fired almost five hours after its slot.
+#
+# IMPORTANT, READ BEFORE TRUSTING THIS WORKFLOW
+#
+# What it does today is prove the project is reachable and that the credentials
+# work. It does NOT yet prove the project counts as active, because Supabase
+# measures *database* activity and this request never reaches Postgres.
+#
+# Why it cannot do better yet: the publishable key can only reach the auth
+# service. The PostgREST root returns 401 "Only secret API keys can be used for
+# this endpoint", and a service_role key must never live in a repository secret
+# because it bypasses row-level security. Every table endpoint returns 404
+# because no schema exists until step 6.
+#
+# THE FIX, AT STEP 6: replace the URL below with
+#   "$base/rest/v1/days?select=id&limit=1"
+# An anon request against an RLS-protected table returns 200 with an empty
+# array and genuinely executes a query, which is what Supabase measures.
 
 on:
   schedule:
@@ -11,32 +28,17 @@ on:
     - cron: "0 6 * * 4" # Thursday 06:00 UTC
   workflow_dispatch:
 
-# If a scheduled run and a manual run overlap, let the newer one win rather
-# than queueing a second identical ping.
 concurrency:
   group: keep-alive
   cancel-in-progress: false
 
 jobs:
   ping:
-    name: Query the Supabase REST API
+    name: Ping Supabase
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-
-      - name: Probe which endpoints accept a publishable key
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: |
-          base="${SUPABASE_URL%/}"
-          for path in "/auth/v1/health" "/auth/v1/settings" "/rest/v1/days?select=id&limit=1" "/rest/v1/profiles?select=id&limit=1"; do
-            code=$(curl -s -o /tmp/b.json -w '%{http_code}' --max-time 20               -H "apikey: $SUPABASE_ANON_KEY" -H "Cache-Control: no-cache" "$base$path")
-            echo "=== $path -> HTTP $code"
-            head --bytes=220 /tmp/b.json; echo ""
-          done
-
       - name: Send an authenticated request
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -62,16 +64,16 @@ jobs:
             --write-out '%{http_code}' \
             --header "apikey: $SUPABASE_ANON_KEY" \
             --header "Cache-Control: no-cache" \
-            "$base/rest/v1/")
+            "$base/auth/v1/health")
 
-          echo "Supabase REST API responded with HTTP $status"
-          echo "--- response body (first 400 bytes) ---"
+          echo "Supabase responded with HTTP $status"
+          echo "--- response body ---"
           head --bytes=400 response.json || true
           echo ""
           echo "--- end of response body ---"
 
           if [ "$status" != "200" ]; then
-            echo "Expected HTTP 200. A 401 means the key is wrong, or was sent"
+            echo "Expected HTTP 200. A 401 means the key is wrong or was sent"
             echo "on the wrong header; a 404 means the URL is wrong; a 5xx may"
             echo "mean the project is paused and needs restoring."
             exit 1
