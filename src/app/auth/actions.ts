@@ -6,8 +6,19 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { originFromHeaders, safeNextPath } from "@/lib/url";
 
-function loginWithError(message: string): never {
-  redirect(`/login?error=${encodeURIComponent(message)}`);
+/**
+ * Back to the login page with an error to render.
+ *
+ * Carries `next` along so a failed attempt does not lose where the person was
+ * originally headed — otherwise the retry silently lands on the home page. The
+ * login page re-reads it from the query string into its hidden field.
+ */
+function loginWithError(message: string, next = "/"): never {
+  const params = new URLSearchParams({ error: message });
+  if (next !== "/") {
+    params.set("next", next);
+  }
+  redirect(`/login?${params.toString()}`);
 }
 
 /**
@@ -37,8 +48,8 @@ export async function signInWithGoogle(formData: FormData) {
     options: { redirectTo: callback.toString() },
   });
 
-  if (error) loginWithError(error.message);
-  if (!data.url) loginWithError("Google did not return a sign-in URL.");
+  if (error) loginWithError(error.message, next);
+  if (!data.url) loginWithError("Google did not return a sign-in URL.", next);
 
   redirect(data.url);
 }

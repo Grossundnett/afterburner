@@ -18,10 +18,18 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const origin = originFromHeaders(request.headers);
 
-  const failed = (message: string) =>
-    NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(message)}`,
-    );
+  // Resolved before the failure paths so they can carry it too: losing `next`
+  // on an error means the retry lands on the home page rather than wherever
+  // the person was actually trying to go.
+  const next = safeNextPath(url.searchParams.get("next"));
+
+  const failed = (message: string) => {
+    const params = new URLSearchParams({ error: message });
+    if (next !== "/") {
+      params.set("next", next);
+    }
+    return NextResponse.redirect(`${origin}/login?${params.toString()}`);
+  };
 
   // Google can decline instead of returning a code — a test-user restriction
   // or a cancelled consent screen both arrive this way.
@@ -43,6 +51,5 @@ export async function GET(request: Request) {
     return failed(error.message);
   }
 
-  const next = safeNextPath(url.searchParams.get("next"));
   return NextResponse.redirect(`${origin}${next}`);
 }
