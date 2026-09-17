@@ -1,0 +1,58 @@
+name: Keep Supabase awake
+
+# Supabase pauses Free Plan projects that go roughly seven days without user
+# database activity. Twice a week leaves a three-to-four day gap, which is
+# margin for GitHub's scheduler running late — cron here is best effort, not a
+# guarantee, and can be delayed under load.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+    - cron: "0 6 * * 4" # Thursday 06:00 UTC
+  workflow_dispatch:
+
+# If a scheduled run and a manual run overlap, let the newer one win rather
+# than queueing a second identical ping.
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Query the Supabase REST API
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Send an authenticated request
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "SUPABASE_URL or SUPABASE_ANON_KEY is not set in repository secrets."
+            exit 1
+          fi
+
+          # Strip any trailing slash so the path does not end up doubled.
+          base="${SUPABASE_URL%/}"
+
+          status=$(curl \
+            --silent --show-error \
+            --max-time 30 \
+            --retry 2 --retry-delay 5 \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --header "apikey: $SUPABASE_ANON_KEY" \
+            --header "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            --header "Cache-Control: no-cache" \
+            "$base/rest/v1/")
+
+          echo "Supabase REST API responded with HTTP $status"
+
+          if [ "$status" != "200" ]; then
+            echo "Expected HTTP 200. A 401 means the key is wrong or expired;"
+            echo "a 404 means the URL is wrong; a 5xx may mean the project is"
+            echo "already paused and needs restoring from the dashboard."
+            exit 1
+          fi
