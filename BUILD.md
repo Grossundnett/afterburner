@@ -4,32 +4,27 @@ Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
 ## Where we are
 
-**5 of 11 steps fully done** (0, 1, 2, 3, 4). **1 partially done** (5).
-**5 not started** (6, 7, 8, 9, 10).
+**6 of 11 steps fully done** (0, 1, 2, 3, 4, 5). **5 not started**
+(6, 7, 8, 9, 10).
 
-**Step 5 is half finished.** Every dashboard — Google Cloud, Supabase — is
-configured. **No auth code exists.** Nothing in `src/` does sign-in, and the app
-still cannot log anybody in.
+**Auth works.** Google sign-in, the code exchange, sign-out and route
+protection are all built and the build passes. **Step 5 is not signed off until
+login has been tested on the live Vercel URL**, not just localhost — the
+production-origin handling cannot be exercised locally.
 
-**Next action:** the code half of Step 5 — `/login`, `/auth/callback`, a
-sign-out action, route protection in `src/proxy.ts`, and the signed-in email on
-the home page.
+**Next action: Step 6 — schema and RLS.** The SQL is already written out in
+that section; it needs pasting into the Supabase SQL Editor.
 
-**Realistically ~3 hours of build time left in Phase 1**, against the original
-4.5 hour estimate:
+**Realistically ~2.5 hours of build time left in Phase 1:**
 
 | Remaining | Minutes |
 |---|---|
-| 5. Google OAuth — code half only, dashboards done | 30 |
 | 6. Schema and RLS | 30 |
 | 7. Day log form | 60 |
 | 8. List view | 30 |
 | 9. Ship and verify | 20 |
 | 10. Set the gate | 5 |
-| | **~2 hr 55 min** |
-
-That assumes nothing fights back. Step 5 is the step most likely to overrun,
-because three systems have to agree on URLs and the errors are misleading.
+| | **~2 hr 25 min** |
 
 | | |
 |---|---|
@@ -347,7 +342,7 @@ common first-deploy failure. Do it now while the values are in front of you.
 
 ---
 
-## Step 5 — Google OAuth (40 min) 🟡 MANUAL CONFIG DONE, CODE NOT STARTED
+## Step 5 — Google OAuth (40 min) ✅ BUILT — VERIFY ON THE LIVE URL
 
 **The fiddliest step in Phase 1, and most of it is clicking, not coding.** Three
 systems have to agree with each other: Google issues the credentials, Supabase
@@ -397,11 +392,49 @@ sign-in fails for an account, check the test-user list before touching URLs.
 pasting the callback URL there fails validation. It stays empty — Supabase does
 the token exchange server-side, so the browser never needs a registered origin.
 
-### ⬜ What is left — the code half
+### ✅ The code half — built
 
-Nothing in `src/` exists for auth yet. Still to build: `/login`,
-`/auth/callback`, a sign-out action, route protection in `src/proxy.ts`, and the
-signed-in email shown on the home page.
+| File | What it does |
+|---|---|
+| `src/lib/url.ts` | Public origin from forwarded headers; `next` sanitiser |
+| `src/app/auth/actions.ts` | `signInWithGoogle` and `signOut` Server Actions |
+| `src/app/auth/callback/route.ts` | Exchanges the OAuth code for a session |
+| `src/app/login/page.tsx` | One button, no client JavaScript |
+| `src/proxy.ts` | Session refresh plus route protection |
+| `src/app/page.tsx` | Shows the signed-in email, and a sign-out button |
+
+Four decisions worth not relearning:
+
+**`getClaims()` returns a three-way union.** Claims with no error when signed
+in; null data with an error when something broke; and **null data with no error
+when there is simply no session.** The signed-in test is therefore
+`data?.claims`, never `!error` — testing the error reads "nobody is logged in"
+as success and disables route protection entirely. The shape is not in the docs;
+it came from the type definitions in `node_modules`.
+
+**Redirects in the proxy carry the refreshed cookies forward.** A token refresh
+writes cookies onto the response; returning a bare `NextResponse.redirect`
+discards them, which shows up as an occasional random logout rather than a
+reproducible bug.
+
+**`next` is sanitised at every hop, and `//` is rejected.** Supabase's own
+documented snippet only checks for a leading slash, so it would forward to
+`//evil.example`, which browsers read as an absolute URL. That is an open
+redirect.
+
+**Public paths are `/login` and `/auth`.** Exact or segment-prefixed, so
+`/authorize` would not slip through. Without `/login` being public the redirect
+loops forever; without `/auth` the callback is unreachable while signed out,
+which is the only state it is ever used in.
+
+### ⚠️ Not verified until tested on the live URL
+
+The production-origin handling **cannot be exercised on localhost**. Vercel
+terminates TLS at its edge and forwards to the function over an internal
+hostname, so `request.url` can carry that internal host; the code reads
+`x-forwarded-host` instead. Locally there is no proxy in front, so that branch
+never runs. **Test login on `https://afterburner-two.vercel.app` before calling
+Step 5 done.**
 
 **Prompt:**
 
@@ -683,7 +716,7 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 | 2. Ground rules ✅ | 10 |
 | 3. Tokens ✅ | 10 |
 | 4. Supabase wiring ✅ | 30 |
-| 5. Google OAuth 🟡 dashboards done, code not started | 40 |
+| 5. Google OAuth ✅ | 40 |
 | 6. Schema and RLS | 30 |
 | 7. Day log form | 60 |
 | 8. List view | 30 |
