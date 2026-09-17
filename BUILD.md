@@ -7,10 +7,11 @@ Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 **6 of 11 steps fully done** (0, 1, 2, 3, 4, 5). **5 not started**
 (6, 7, 8, 9, 10).
 
-**Auth works.** Google sign-in, the code exchange, sign-out and route
-protection are all built and the build passes. **Step 5 is not signed off until
-login has been tested on the live Vercel URL**, not just localhost — the
-production-origin handling cannot be exercised locally.
+**Auth works, verified in production.** Google sign-in, the code exchange and
+route protection are built, and login has been tested end to end on
+`afterburner-two.vercel.app`, in incognito, and on phone. The landing hostname
+after Google consent was correct, which is the only proof the production-origin
+handling works — that branch cannot execute on localhost.
 
 **Next action: Step 6 — schema and RLS.** The SQL is already written out in
 that section; it needs pasting into the Supabase SQL Editor.
@@ -70,7 +71,7 @@ Not steps. Infrastructure that outlives Phase 1 and must not be forgotten.
 | **Keep-alive: point at a real table** | ⬜ **Do this at Step 6** | One-line change: swap the URL for `/rest/v1/days?select=id&limit=1`. An anon request against an RLS-protected table returns 200 with an empty array and genuinely runs a query. This is the change that makes the workflow actually prevent pausing. |
 | Why not PostgREST today | — | `/rest/v1/` returns 401 `Only secret API keys can be used for this endpoint`, and a `service_role` key must never sit in a repository secret because it bypasses RLS. Table endpoints return 404 until the schema exists. |
 | GitHub disables cron on idle repos | ⚠️ Watch | Scheduled workflows are switched off automatically after 60 days with no repository activity. During a long gate, check the Actions tab occasionally, or push something. |
-| Vercel environment variables | ⬜ Verify | `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` must exist in the Vercel dashboard, not just `.env.local`. Missing them is the most common first-deploy failure. |
+| Vercel environment variables | ✅ Confirmed | `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` must exist in the Vercel dashboard, not just `.env.local`. Missing them is the most common first-deploy failure. |
 
 ---
 
@@ -342,7 +343,7 @@ common first-deploy failure. Do it now while the values are in front of you.
 
 ---
 
-## Step 5 — Google OAuth (40 min) ✅ BUILT — VERIFY ON THE LIVE URL
+## Step 5 — Google OAuth (40 min) ✅ DONE — VERIFIED IN PRODUCTION
 
 **The fiddliest step in Phase 1, and most of it is clicking, not coding.** Three
 systems have to agree with each other: Google issues the credentials, Supabase
@@ -427,14 +428,21 @@ redirect.
 loops forever; without `/auth` the callback is unreachable while signed out,
 which is the only state it is ever used in.
 
-### ⚠️ Not verified until tested on the live URL
+### ✅ Verified on the live URL
 
-The production-origin handling **cannot be exercised on localhost**. Vercel
-terminates TLS at its edge and forwards to the function over an internal
-hostname, so `request.url` can carry that internal host; the code reads
-`x-forwarded-host` instead. Locally there is no proxy in front, so that branch
-never runs. **Test login on `https://afterburner-two.vercel.app` before calling
-Step 5 done.**
+The production-origin handling **cannot be exercised on localhost**, because
+there is no proxy in front locally. Vercel terminates TLS at its edge and
+forwards to the function over an internal hostname, so `request.url` can carry
+that internal host; the code reads `x-forwarded-host` instead.
+
+**Tested and passing.** Sign-in on `https://afterburner-two.vercel.app` in
+incognito landed back on exactly that hostname with the email rendered, and the
+same flow works on phone. Vercel holds both environment variables for
+Production, Preview and Development.
+
+One result that reads like a failure but is not: signing in from `/days`
+returns you to `/days`, which shows a 404 because that route does not exist
+until Step 8. The 404 is the proof that `next` survived the round trip.
 
 **Prompt:**
 
