@@ -5,22 +5,15 @@ name: Keep Supabase awake
 # margin for GitHub's scheduler running late — cron here is best effort, not a
 # guarantee. The first scheduled run fired almost five hours after its slot.
 #
-# IMPORTANT, READ BEFORE TRUSTING THIS WORKFLOW
+# What it does: an anonymous SELECT against an RLS-protected table. The policy
+# returns an empty array rather than rows, but the query still executes against
+# Postgres, which is what Supabase measures. A bare HTTP ping to the auth
+# service does not count, which is what this used to do before the schema
+# existed.
 #
-# What it does today is prove the project is reachable and that the credentials
-# work. It does NOT yet prove the project counts as active, because Supabase
-# measures *database* activity and this request never reaches Postgres.
-#
-# Why it cannot do better yet: the publishable key can only reach the auth
-# service. The PostgREST root returns 401 "Only secret API keys can be used for
-# this endpoint", and a service_role key must never live in a repository secret
-# because it bypasses row-level security. Every table endpoint returns 404
-# because no schema exists until step 6.
-#
-# THE FIX, AT STEP 6: replace the URL below with
-#   "$base/rest/v1/days?select=id&limit=1"
-# An anon request against an RLS-protected table returns 200 with an empty
-# array and genuinely executes a query, which is what Supabase measures.
+# The key goes on `apikey` only. Publishable keys (sb_publishable_...) are not
+# JWTs, so sending one as `Authorization: Bearer` makes the gateway try to parse
+# it as a JWT and reject the request with 401.
 
 on:
   schedule:
@@ -52,10 +45,8 @@ jobs:
           # Strip any trailing slash so the path does not end up doubled.
           base="${SUPABASE_URL%/}"
 
-          # The key goes on `apikey` only. Publishable keys (sb_publishable_...)
-          # are not JWTs, so sending one as `Authorization: Bearer` makes the
-          # gateway try to parse it as a JWT and reject the request with 401.
-          # `Authorization: Bearer` is for user tokens from Supabase Auth.
+          # An empty array is the expected body: RLS hides every row from an
+          # anonymous caller. The point is that the query ran at all.
           status=$(curl \
             --silent --show-error \
             --max-time 30 \
@@ -64,7 +55,7 @@ jobs:
             --write-out '%{http_code}' \
             --header "apikey: $SUPABASE_ANON_KEY" \
             --header "Cache-Control: no-cache" \
-            "$base/auth/v1/health")
+            "$base/rest/v1/days?select=id&limit=1")
 
           echo "Supabase responded with HTTP $status"
           echo "--- response body ---"
@@ -75,6 +66,7 @@ jobs:
           if [ "$status" != "200" ]; then
             echo "Expected HTTP 200. A 401 means the key is wrong or was sent"
             echo "on the wrong header; a 404 means the URL is wrong; a 5xx may"
-            echo "mean the project is paused and needs restoring."
+            echo "mean the project is paused and needs restoring. A 404 with"
+            echo "PGRST205 means the days table is gone."
             exit 1
           fi
