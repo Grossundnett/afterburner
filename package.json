@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "gen:types": "supabase gen types typescript --project-id ijnemkslclmpjhewydkk > src/lib/database.types.ts",
+    "test:rls": "node scripts/rls-check.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

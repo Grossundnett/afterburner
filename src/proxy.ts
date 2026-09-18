@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import type { Database } from "@/lib/database.types";
+
 /**
  * Paths an unauthenticated visitor may reach.
  *
@@ -34,7 +36,7 @@ export async function proxy(request: NextRequest) {
   // here so they can be reapplied if this ends up returning a redirect.
   let authHeaders: Record<string, string> = {};
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
