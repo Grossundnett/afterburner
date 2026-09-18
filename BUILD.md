@@ -4,8 +4,8 @@ Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
 ## Where we are
 
-**6 of 11 steps fully done** (0, 1, 2, 3, 4, 5). **5 not started**
-(6, 7, 8, 9, 10).
+**7 of 11 steps fully done** (0, 1, 2, 3, 4, 5, 6). **4 not started**
+(7, 8, 9, 10).
 
 **Auth works, verified in production.** Google sign-in, the code exchange and
 route protection are built, and login has been tested end to end on
@@ -13,19 +13,18 @@ route protection are built, and login has been tested end to end on
 after Google consent was correct, which is the only proof the production-origin
 handling works — that branch cannot execute on localhost.
 
-**Next action: Step 6 — schema and RLS.** The SQL is already written out in
-that section; it needs pasting into the Supabase SQL Editor.
+**Next action: Step 7 — the day log form.** The schema exists, RLS is proven
+enforced, and the database is typed end to end. Nothing writes to it yet.
 
-**Realistically ~2.5 hours of build time left in Phase 1:**
+**Realistically ~2 hours of build time left in Phase 1:**
 
 | Remaining | Minutes |
 |---|---|
-| 6. Schema and RLS | 30 |
 | 7. Day log form | 60 |
 | 8. List view | 30 |
 | 9. Ship and verify | 20 |
 | 10. Set the gate | 5 |
-| | **~2 hr 25 min** |
+| | **~1 hr 55 min** |
 
 | | |
 |---|---|
@@ -67,9 +66,8 @@ Not steps. Infrastructure that outlives Phase 1 and must not be forgotten.
 
 | Item | Status | Notes |
 |---|---|---|
-| **Keep-alive workflow** | 🟡 Runs green, not yet doing its job | `.github/workflows/keep-alive.yml`. Mondays and Thursdays plus manual `workflow_dispatch`; a manual run passes. It pings `/auth/v1/health`, which proves the project is reachable and the key works — but that request never reaches Postgres, and Supabase measures *database* activity. Treat it as plumbing that is proven, not as pause protection. |
-| **Keep-alive: point at a real table** | ⬜ **Do this at Step 6** | One-line change: swap the URL for `/rest/v1/days?select=id&limit=1`. An anon request against an RLS-protected table returns 200 with an empty array and genuinely runs a query. This is the change that makes the workflow actually prevent pausing. |
-| Why not PostgREST today | — | `/rest/v1/` returns 401 `Only secret API keys can be used for this endpoint`, and a `service_role` key must never sit in a repository secret because it bypasses RLS. Table endpoints return 404 until the schema exists. |
+| **Keep-alive workflow** | ✅ Doing its job | `.github/workflows/keep-alive.yml`. Mondays and Thursdays plus manual `workflow_dispatch`; a manual run passes. Now queries `/rest/v1/days?select=id&limit=1` — an anonymous SELECT against an RLS-protected table. RLS returns an empty array, but the query executes against Postgres, which is what Supabase measures. |
+| Why not the PostgREST root | — | `/rest/v1/` returns 401 `Only secret API keys can be used for this endpoint`, and a `service_role` key must never sit in a repository secret because it bypasses RLS. Hence a table query rather than the root. |
 | GitHub disables cron on idle repos | ⚠️ Watch | Scheduled workflows are switched off automatically after 60 days with no repository activity. During a long gate, check the Actions tab occasionally, or push something. |
 | Vercel environment variables | ✅ Confirmed | `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` must exist in the Vercel dashboard, not just `.env.local`. Missing them is the most common first-deploy failure. |
 
@@ -467,7 +465,7 @@ Test locally, then deploy and test on the live URL. **Do not move on until login
 
 ---
 
-## Step 6 — Schema and RLS (30 min)
+## Step 6 — Schema and RLS (30 min) ✅ DONE
 
 **Why the SQL is written out rather than prompted for:** row-level security is
 easy to get subtly wrong in a way that looks fine until it isn't, and generated
@@ -569,6 +567,38 @@ Two notes worth understanding rather than copying:
 **`unique (user_id, source, external_id)`** is what stops Strava re-imports duplicating rows in phase 4. Cheap now, painful to add once you have data.
 
 **`with check` as well as `using`** — `using` controls which rows you can read and update; `with check` controls what you're allowed to write. Omitting `with check` lets you insert rows belonging to someone else. This is the most common RLS mistake.
+
+### ✅ What was done
+
+Applied by hand in the SQL Editor, then recorded.
+
+| Artefact | What it is |
+|---|---|
+| `supabase/migrations/0001_init.sql` | The exact SQL that was run, including the backfill, so a fresh clone reproduces this state |
+| `src/lib/database.types.ts` | Generated from the live schema |
+| `npm run gen:types` | Regenerates the above |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run test:rls` | Proves RLS is enforced, not merely enabled |
+
+**The backfill was necessary, not decorative.** The signup trigger fires only on
+INSERT into `auth.users`. Both Google accounts had signed in *before* the
+migration ran, so no profile rows would ever have been created for them — you
+would have been authenticated with no profile, and step 7 breaks the moment it
+reads a wake target.
+
+**RLS test result: 7/7.** Anonymous reads of all four tables return HTTP 200
+with zero rows — `profiles` holds two rows and shows none. Anonymous inserts
+under a forged `user_id` are refused 401 by the with-check clause on all three
+writable tables. What this does *not* prove is that one signed-in user cannot
+read another's rows; that needs two sessions and stays a manual check at step 9.
+
+**The generated types are wired, not just generated.** `Database` is threaded
+through all three Supabase clients, so wrong table names, wrong filter columns,
+wrong insert shapes and wrong result properties are all compile errors. One
+gap worth knowing: a typo inside `.select("...")` is not flagged at the call
+site — instead the result becomes
+`SelectQueryError<"column 'wake_tim' does not exist on 'days'.">`, which errors
+the moment you read a property off it.
 
 **Prompt:**
 
@@ -725,7 +755,7 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 | 3. Tokens ✅ | 10 |
 | 4. Supabase wiring ✅ | 30 |
 | 5. Google OAuth ✅ | 40 |
-| 6. Schema and RLS | 30 |
+| 6. Schema and RLS ✅ | 30 |
 | 7. Day log form | 60 |
 | 8. List view | 30 |
 | 9. Ship and verify | 20 |
