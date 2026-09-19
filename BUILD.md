@@ -4,8 +4,7 @@ Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
 ## Where we are
 
-**7 of 11 steps fully done** (0-6). **Step 7 is half built** — day fields
-done, activities not started. **3 not started** (8, 9, 10).
+**8 of 11 steps fully done** (0-7). **3 not started** (8, 9, 10).
 
 **Auth works, verified in production.** Google sign-in, the code exchange and
 route protection are built, and login has been tested end to end on
@@ -13,17 +12,16 @@ route protection are built, and login has been tested end to end on
 after Google consent was correct, which is the only proof the production-origin
 handling works — that branch cannot execute on localhost.
 
-**Next action: the second half of Step 7** — the activities section on `/log`.
+**Next action: Step 8 — the list view at `/days`.**
 
-**Realistically ~1.5 hours of build time left in Phase 1:**
+**Realistically under an hour of build time left in Phase 1:**
 
 | Remaining | Minutes |
 |---|---|
-| 7. Day log form — activities half only | 30 |
 | 8. List view | 30 |
 | 9. Ship and verify | 20 |
 | 10. Set the gate | 5 |
-| | **~1 hr 25 min** |
+| | **~55 min** |
 
 | | |
 |---|---|
@@ -614,7 +612,7 @@ what it proves.
 
 ---
 
-## Step 7 — The day log form (60 min) 🟡 DAY FIELDS DONE
+## Step 7 — The day log form (60 min) ✅ DONE
 
 **The core of Phase 1, and deliberately minimal.** One form, one date, a handful
 of fields. No week grid, no charts, no navigation. Those come in Phase 2 once
@@ -706,7 +704,7 @@ conversion.
 
 Compute avg_pace_s_per_km on save when both distance and duration exist.
 
-Adding and removing rows before submit should not require a page reload.
+Each add and remove is its own submit. A page reload per row is fine.
 ```
 
 ---

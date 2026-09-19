@@ -4,7 +4,17 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { BLOCKER_CODES } from "@/lib/blockers";
+import { SPORTS } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
+import {
+  kmToMetres,
+  minutesToSeconds,
+  paceSecondsPerKm,
+} from "@/lib/units";
+
+/** Postgres uuid, as rendered alongside each activity row. */
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** An HTML date input always submits YYYY-MM-DD. */
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -142,4 +152,141 @@ export async function saveDay(formData: FormData) {
   }
 
   backToForm(form.date, { saved: "1" });
+}
+
+const activityFormSchema = z.object({
+  date: z.string().regex(DATE, "Pick a valid date."),
+  loaded_date: z.string().regex(DATE).nullable().catch(null),
+
+  sport: z.enum(SPORTS, { message: "Pick a sport." }),
+
+  // Named for the units a person types. The conversion into stored metres and
+  // seconds happens below, in this action — the boundary between the form's
+  // units and the domain's. Keeping the field names honest about what they hold
+  // is worth more than converting a line earlier inside the schema.
+  distance_km: optional(
+    z.coerce
+      .number()
+      .positive("Distance must be a positive number.")
+      .max(1000, "Distance must be under 1000 km."),
+  ),
+  duration_min: optional(
+    z.coerce
+      .number()
+      .positive("Duration must be a positive number.")
+      .max(1440, "Duration must be under 24 hours."),
+  ),
+
+  notes: optional(z.string().max(2000)),
+});
+
+/**
+ * Adds one activity to a date.
+ *
+ * Separate from saveDay, and necessarily so. `days` is keyed on
+ * (user_id, date) so its write is an idempotent upsert; `activities` has no
+ * such key, because you can legitimately run twice in one day, so its write is
+ * an insert. Sharing a form would mean every re-save of the day duplicated
+ * every activity.
+ *
+ * Duplicate protection is post/redirect/get: this POSTs and then redirects, so
+ * refreshing or going back re-runs the GET rather than replaying the insert.
+ * Double-tapping the button will still create two rows — there is no way to
+ * disable a button without client JavaScript — but they are visible and one
+ * tap removes the extra.
+ */
+export async function addActivity(formData: FormData) {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims.sub;
+
+  if (!userId) {
+    redirect(`/login?next=${encodeURIComponent("/log")}`);
+  }
+
+  const parsed = activityFormSchema.safeParse(Object.fromEntries(formData));
+
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    const fallbackDate = formData.get("date");
+    backToForm(typeof fallbackDate === "string" ? fallbackDate : "", {
+      error: first?.message ?? "That activity could not be added.",
+    });
+  }
+
+  const form = parsed.data;
+
+  // Same assertion as the day form: the page renders one date and submits it
+  // hidden, so these agree unless something went wrong.
+  if (form.loaded_date !== form.date) {
+    backToForm(form.date, {
+      error: "The form was showing a different date. Check the values before adding.",
+    });
+  }
+
+  const distanceMetres =
+    form.distance_km === null ? null : kmToMetres(form.distance_km);
+  const durationSeconds =
+    form.duration_min === null ? null : minutesToSeconds(form.duration_min);
+
+  const { error } = await supabase.from("activities").insert({
+    user_id: userId,
+    date: form.date,
+    sport: form.sport,
+    distance_m: distanceMetres,
+    duration_s: durationSeconds,
+    avg_pace_s_per_km: paceSecondsPerKm(distanceMetres, durationSeconds),
+    notes: form.notes,
+  });
+
+  if (error) {
+    backToForm(form.date, { error: `Activity not added. ${error.message}` });
+  }
+
+  backToForm(form.date, { added: "1" });
+}
+
+/**
+ * Removes one activity.
+ *
+ * Deletes immediately with no confirmation step, which is a deliberate choice:
+ * without client JavaScript a confirm dialog means a second round trip and a
+ * second screen, and re-entering an activity takes about ten seconds.
+ *
+ * Filtered by user_id as well as id. RLS would refuse someone else's row
+ * anyway, but the query should be correct on its own terms rather than only
+ * because the database rescues it — and a delete filtered solely by a guessable
+ * id is the wrong habit to build before phase 4 adds share tokens.
+ */
+export async function removeActivity(formData: FormData) {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims.sub;
+
+  if (!userId) {
+    redirect(`/login?next=${encodeURIComponent("/log")}`);
+  }
+
+  const rawId = formData.get("id");
+  const rawDate = formData.get("date");
+
+  const id = typeof rawId === "string" && UUID.test(rawId) ? rawId : null;
+  const date =
+    typeof rawDate === "string" && DATE.test(rawDate) ? rawDate : null;
+
+  if (!id || !date) {
+    backToForm(date ?? "", { error: "That activity could not be removed." });
+  }
+
+  const { error } = await supabase
+    .from("activities")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (error) {
+    backToForm(date, { error: `Activity not removed. ${error.message}` });
+  }
+
+  backToForm(date, { removed: "1" });
 }

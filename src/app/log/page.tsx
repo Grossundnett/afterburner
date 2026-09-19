@@ -1,7 +1,9 @@
 import { BLOCKER_CODES, BLOCKER_LABELS } from "@/lib/blockers";
+import { SPORTS, SPORT_LABELS, sportLabel } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
+import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
 
-import { saveDay } from "./actions";
+import { addActivity, removeActivity, saveDay } from "./actions";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -62,7 +64,13 @@ const asInputTime = (value: string | null) => value?.slice(0, 5) ?? "";
 export default async function LogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{
+    date?: string;
+    saved?: string;
+    added?: string;
+    removed?: string;
+    error?: string;
+  }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
@@ -94,20 +102,37 @@ export default async function LogPage({
   // Both reads are filtered by the authenticated user as well as the date. RLS
   // would enforce that anyway; saying it here means the query is correct on its
   // own terms rather than only because the database rescues it.
-  const [{ data: day }, { data: metrics }] = await Promise.all([
-    supabase
-      .from("days")
-      .select("wake_time, sleep_time, blocker_code, blocker_note, notes")
-      .eq("user_id", userId)
-      .eq("date", date)
-      .maybeSingle(),
-    supabase
-      .from("body_metrics")
-      .select("weight_kg")
-      .eq("user_id", userId)
-      .eq("date", date)
-      .maybeSingle(),
-  ]);
+  const [{ data: day }, { data: metrics }, { data: activities }] =
+    await Promise.all([
+      supabase
+        .from("days")
+        .select("wake_time, sleep_time, blocker_code, blocker_note, notes")
+        .eq("user_id", userId)
+        .eq("date", date)
+        .maybeSingle(),
+      supabase
+        .from("body_metrics")
+        .select("weight_kg")
+        .eq("user_id", userId)
+        .eq("date", date)
+        .maybeSingle(),
+      supabase
+        .from("activities")
+        .select("id, sport, distance_m, duration_s, avg_pace_s_per_km, notes")
+        .eq("user_id", userId)
+        .eq("date", date)
+        .order("created_at", { ascending: true }),
+    ]);
+
+  // One banner, whichever action just ran. Every action redirects back here
+  // with a flag rather than returning a value, so a refresh cannot replay it.
+  const status = params.saved
+    ? `Saved for ${formatDate(date, "short")}.`
+    : params.added
+      ? "Activity added."
+      : params.removed
+        ? "Activity removed."
+        : null;
 
   return (
     <main data-sport="discipline" className="flex flex-1 justify-center p-5">
@@ -126,12 +151,12 @@ export default async function LogPage({
           </p>
         </div>
 
-        {params.saved ? (
+        {status ? (
           <p
             role="status"
             className="border border-border bg-surface-2 p-3 text-[13px] font-medium text-accent"
           >
-            Saved for {formatDate(date, "short")}.
+            {status}
           </p>
         ) : null}
 
@@ -248,6 +273,161 @@ export default async function LogPage({
             Save day
           </button>
         </form>
+
+        {/*
+          Activities are a separate form from the day, and necessarily so.
+          `days` is keyed on (user_id, date), so its write is an idempotent
+          upsert. `activities` has no such key — you can legitimately run twice
+          in one day — so its write is an insert. Sharing one form would
+          duplicate every activity each time the day was re-saved.
+
+          Each row is a server-rendered entity carrying its own database id, so
+          there is no client-side row index that could drift out of step with
+          what is stored.
+        */}
+        <div className="flex flex-col gap-4 border-t border-border pt-6">
+          <h2 className="text-[15px] font-semibold tracking-tight text-text">
+            Activities
+          </h2>
+
+          {activities && activities.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {activities.map((activity) => (
+                <li
+                  key={activity.id}
+                  className="flex items-start gap-3 rounded-md border border-border bg-surface p-3"
+                >
+                  <div className="flex flex-1 flex-col gap-1">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <span className="text-[14px] font-medium text-text">
+                        {sportLabel(activity.sport)}
+                      </span>
+                      {activity.distance_m !== null ? (
+                        <span className="font-mono text-[13px] tabular-nums text-text-muted">
+                          {metresToKm(activity.distance_m).toFixed(2)} km
+                        </span>
+                      ) : null}
+                      {activity.duration_s !== null ? (
+                        <span className="font-mono text-[13px] tabular-nums text-text-muted">
+                          {secondsToMinutes(activity.duration_s)} min
+                        </span>
+                      ) : null}
+                      {activity.avg_pace_s_per_km !== null ? (
+                        <span className="font-mono text-[13px] tabular-nums text-accent">
+                          {formatPace(activity.avg_pace_s_per_km)} /km
+                        </span>
+                      ) : null}
+                    </div>
+                    {activity.notes ? (
+                      <p className="text-[13px] text-text-muted">
+                        {activity.notes}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {/* The id is rendered beside the row it belongs to, from the
+                      same server render, so the two cannot disagree. */}
+                  <form action={removeActivity}>
+                    <input type="hidden" name="id" value={activity.id} />
+                    <input type="hidden" name="date" value={date} />
+                    <button
+                      type="submit"
+                      className="cursor-pointer rounded-md border border-border px-3 py-2 text-[12px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={label}>Nothing logged for this date yet.</p>
+          )}
+
+          <form
+            action={addActivity}
+            className="flex flex-col gap-4 rounded-md border border-border bg-surface p-4"
+          >
+            <input type="hidden" name="date" value={date} />
+            <input type="hidden" name="loaded_date" value={date} />
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="sport" className={label}>
+                Sport
+              </label>
+              <select
+                id="sport"
+                name="sport"
+                required
+                defaultValue=""
+                className={field}
+              >
+                <option value="" disabled>
+                  Pick one
+                </option>
+                {SPORTS.map((sport) => (
+                  <option key={sport} value={sport}>
+                    {SPORT_LABELS[sport]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="flex flex-1 flex-col gap-2">
+                <label htmlFor="distance_km" className={label}>
+                  Distance, km
+                </label>
+                <input
+                  id="distance_km"
+                  name="distance_km"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  inputMode="decimal"
+                  className={`${field} font-mono tabular-nums`}
+                />
+              </div>
+
+              <div className="flex flex-1 flex-col gap-2">
+                <label htmlFor="duration_min" className={label}>
+                  Duration, min
+                </label>
+                <input
+                  id="duration_min"
+                  name="duration_min"
+                  type="number"
+                  step="1"
+                  min="0"
+                  inputMode="decimal"
+                  className={`${field} font-mono tabular-nums`}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {/* The day form already owns id="notes", and ids must be unique
+                  on the page for a label to point at the right control. */}
+              <label htmlFor="activity_notes" className={label}>
+                Notes
+              </label>
+              <input
+                id="activity_notes"
+                name="notes"
+                type="text"
+                maxLength={2000}
+                className={field}
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full cursor-pointer rounded-md border border-border bg-surface px-4 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              Add activity
+            </button>
+          </form>
+        </div>
 
         {/*
           Changing the date is navigation, not part of the save.
