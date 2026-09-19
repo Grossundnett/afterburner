@@ -26,8 +26,7 @@ const optional = <T extends z.ZodTypeAny>(inner: T) =>
 const dayFormSchema = z.object({
   date: z.string().regex(DATE, "Pick a valid date."),
 
-  // The date the form was rendered for. See `showing` below — this is what
-  // stops a blank field wiping data belonging to a date you never saw.
+  // The date the page was rendered for. See the assertion below.
   loaded_date: z.string().regex(DATE).nullable().catch(null),
 
   wake_time: optional(z.string().regex(TIME, "Wake time must be HH:MM.")),
@@ -62,6 +61,11 @@ function backToForm(date: string, params: Record<string, string>): never {
  * leave one row unwritten, and resubmitting the same form repairs it. The one
  * case worth wording precisely is the day saving while the weight does not —
  * reporting that as a flat failure is how you end up entering a day twice.
+ *
+ * Blank clears. That is only safe because the page renders every field from the
+ * stored row for one date, and the date is not editable inside this form — it
+ * arrives as a hidden field matching what was rendered. Changing date is a
+ * separate GET form that navigates and re-renders.
  */
 export async function saveDay(formData: FormData) {
   // Auth first, before parsing anything. Server Actions are POSTs to whatever
@@ -89,69 +93,51 @@ export async function saveDay(formData: FormData) {
 
   const form = parsed.data;
 
-  /**
-   * True when this submit is editing the same date the form was rendered with,
-   * which is the only situation where we know the person saw the stored values.
-   *
-   * When it is true a blank field means "clear this". When it is false — they
-   * changed the date picker to a date whose contents were never displayed —
-   * blanks are left alone instead, so fiddling with the date cannot silently
-   * erase another day's entry.
-   */
-  const showing = form.loaded_date === form.date;
+  // The page renders one date and submits that same date in a hidden field, so
+  // these always agree. If they do not, the values on screen belonged to some
+  // other day and saving them here would copy one record onto another. Refuse,
+  // and re-render the submitted date so the correct values are shown instead.
+  if (form.loaded_date !== form.date) {
+    backToForm(form.date, {
+      error: "The form was showing a different date. Check these values before saving.",
+    });
+  }
 
-  const dayRow = {
-    user_id: userId,
-    date: form.date,
-    ...(showing || form.wake_time !== null
-      ? { wake_time: form.wake_time }
-      : {}),
-    ...(showing || form.sleep_time !== null
-      ? { sleep_time: form.sleep_time }
-      : {}),
-    ...(showing || form.blocker_code !== null
-      ? { blocker_code: form.blocker_code }
-      : {}),
-    ...(showing || form.blocker_note !== null
-      ? { blocker_note: form.blocker_note }
-      : {}),
-    ...(showing || form.notes !== null ? { notes: form.notes } : {}),
-  };
-
-  const { error: dayError } = await supabase
-    .from("days")
-    .upsert(dayRow, { onConflict: "user_id,date" });
+  const { error: dayError } = await supabase.from("days").upsert(
+    {
+      user_id: userId,
+      date: form.date,
+      wake_time: form.wake_time,
+      sleep_time: form.sleep_time,
+      blocker_code: form.blocker_code,
+      blocker_note: form.blocker_note,
+      notes: form.notes,
+    },
+    { onConflict: "user_id,date" },
+  );
 
   if (dayError) {
     backToForm(form.date, { error: `Nothing was saved. ${dayError.message}` });
   }
 
-  // Weight only touches body_metrics when there is something to do. Upsert when
-  // a value was given; clear with an update when the field was emptied on a
-  // date we were showing. Update rather than upsert, because upserting a null
+  // Upsert when a weight was given; clear with an update when the field was
+  // emptied. Update rather than upsert for the clear, because upserting a null
   // weight would create an otherwise empty row for a date never weighed.
-  let weightError: string | null = null;
-
-  if (form.weight_kg !== null) {
-    const { error } = await supabase
-      .from("body_metrics")
-      .upsert(
-        { user_id: userId, date: form.date, weight_kg: form.weight_kg },
-        { onConflict: "user_id,date" },
-      );
-    weightError = error?.message ?? null;
-  } else if (showing) {
-    const { error } = await supabase
-      .from("body_metrics")
-      .update({ weight_kg: null })
-      .eq("user_id", userId)
-      .eq("date", form.date);
-    weightError = error?.message ?? null;
-  }
+  const { error: weightError } =
+    form.weight_kg !== null
+      ? await supabase.from("body_metrics").upsert(
+          { user_id: userId, date: form.date, weight_kg: form.weight_kg },
+          { onConflict: "user_id,date" },
+        )
+      : await supabase
+          .from("body_metrics")
+          .update({ weight_kg: null })
+          .eq("user_id", userId)
+          .eq("date", form.date);
 
   if (weightError) {
     backToForm(form.date, {
-      error: `Day saved. Weight could not be saved. ${weightError}`,
+      error: `Day saved. Weight could not be saved. ${weightError.message}`,
     });
   }
 

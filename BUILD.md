@@ -682,6 +682,12 @@ night — the most likely moment to use it.
 **The two-table write is not atomic, deliberately.** See ARCHITECTURE.md §5,
 *Write semantics*, for the reasoning and the condition for revisiting it.
 
+**The date is not editable inside the save form.** It is stated in the heading
+and carried hidden; changing it is a separate `method="get"` form that navigates
+so the server re-renders. The first version had an editable date input inside
+the save form, which left one date's values on screen under another date and
+copied them across on save. The rule is now a non-negotiable in `AGENTS.md`.
+
 ### ⬜ Activities — not started
 
 The second prompt below. Any number of activity rows per date, distance in

@@ -37,6 +37,12 @@ project shipping.
 - Server Actions are not separate routes — a proxy matcher that skips a path
   also skips Server Actions on it. Every Server Action must check auth itself.
   RLS is the backstop, not the only line.
+- A control the server render depends on must not live inside the form that
+  submits it. If changing it should load different data, it belongs in its own
+  `method="get"` form that navigates. Otherwise the page keeps showing the old
+  data under the new selection, and submitting writes one record's values onto
+  another. Reconciling the mismatch at write time is a patch over a structural
+  bug: the screen still lies even once the write is safe.
 - Colours come from CSS variables in `globals.css`. Never inline a hex value.
 - Server Components by default. `"use client"` only where interactivity requires
   it.

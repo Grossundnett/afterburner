@@ -331,16 +331,29 @@ write is genuinely invalid — gym sets against a parent activity in phase 3 is
 the likely candidate, since a set row without its activity is meaningless in a
 way a missing weight is not.
 
-**Blank means clear, but only for the date being shown.** An edit form whose
-empty fields mean "keep whatever is stored" cannot ever remove a wrong entry, so
-blanks clear. That is only safe while the form displays the stored values, which
-it does — it loads the row for the selected date and pre-fills.
+**Blank means clear.** An edit form whose empty fields mean "keep whatever is
+stored" cannot ever remove a wrong entry, so blanks clear. That is only safe
+while the form displays the stored values for exactly the date it will write to,
+which is enforced structurally rather than defensively.
 
-The guard is a hidden `loaded_date` carrying the date the form was rendered for.
-If the submitted date matches it, blanks clear. If it does not — the date input
-was changed to a day whose contents were never displayed — blanks are preserved
-instead. Without that, changing the date picker and saving would silently erase
-another day's entry.
+**The date is not editable inside the save form.** It is stated in the heading
+and carried in hidden fields; changing it is a separate `method="get"` form that
+navigates to `/log?date=…` so the server re-renders every field from that date's
+row. A hidden `loaded_date` then asserts at the write boundary that the two
+still agree, and refuses rather than guessing if they do not.
+
+This shape was arrived at the expensive way. The first version put an editable
+date input inside the save form and tried to reconcile the mismatch at write
+time. Changing the picker left the previous date's wake time, sleep time and
+weight on screen with nothing to indicate they belonged elsewhere, and saving
+copied one day's record onto another. The reconciliation only ever guarded
+blanks; populated fields overwrote freely, which is the more damaging direction.
+
+The general rule, which recurs wherever a page renders from a selection — the
+phase 2 week grid especially: **a control the server render depends on must not
+live inside the form that submits it.** Patching the mismatch at write time is
+not a fix, because the screen still shows values belonging to something other
+than the current selection even once the write is safe.
 
 ---
 

@@ -35,6 +35,27 @@ function todayIn(timeZone: string): string {
   }
 }
 
+/**
+ * Formats a YYYY-MM-DD string for display.
+ *
+ * Built from explicit parts and formatted in UTC on purpose. `new Date("2026-09-19")`
+ * parses as UTC midnight, so formatting that in a timezone behind UTC renders
+ * the previous day — the calendar date would be off by one for exactly the
+ * people this app is for.
+ */
+function formatDate(iso: string, style: "long" | "short"): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    weekday: style === "long" ? "long" : undefined,
+    day: "numeric",
+    month: style === "long" ? "long" : "short",
+    year: "numeric",
+  }).format(utc);
+}
+
 /** Postgres returns time as HH:MM:SS; the input wants HH:MM. */
 const asInputTime = (value: string | null) => value?.slice(0, 5) ?? "";
 
@@ -95,6 +116,11 @@ export default async function LogPage({
           <h1 className="text-[24px] font-semibold tracking-tight text-text">
             Log a day
           </h1>
+          {/* The date is stated, not inferred from a picker. Every value below
+              belongs to this date and only this one. */}
+          <p className="font-mono text-[15px] text-accent">
+            {formatDate(date, "long")}
+          </p>
           <p className={label}>
             Everything except the date is optional. Blank clears.
           </p>
@@ -105,7 +131,7 @@ export default async function LogPage({
             role="status"
             className="border border-border bg-surface-2 p-3 text-[13px] font-medium text-accent"
           >
-            Saved.
+            Saved for {formatDate(date, "short")}.
           </p>
         ) : null}
 
@@ -119,24 +145,10 @@ export default async function LogPage({
         ) : null}
 
         <form action={saveDay} className="flex flex-col gap-5">
-          {/* What the form was rendered with. If the date input is changed to
-              some other day, the action preserves blanks instead of clearing,
-              because those stored values were never shown. */}
+          {/* The date is not editable here. Both fields carry what the server
+              rendered; the action refuses to write if they disagree. */}
+          <input type="hidden" name="date" value={date} />
           <input type="hidden" name="loaded_date" value={date} />
-
-          <div className="flex flex-col gap-2">
-            <label htmlFor="date" className={label}>
-              Date
-            </label>
-            <input
-              id="date"
-              name="date"
-              type="date"
-              required
-              defaultValue={date}
-              className={`${field} font-mono`}
-            />
-          </div>
 
           <div className="flex gap-4">
             <div className="flex flex-1 flex-col gap-2">
@@ -236,6 +248,37 @@ export default async function LogPage({
             Save day
           </button>
         </form>
+
+        {/*
+          Changing the date is navigation, not part of the save.
+
+          A method="get" form is the browser's native way to navigate with
+          parameters: submitting it loads /log?date=YYYY-MM-DD and the server
+          re-renders every field from that date's row. No JavaScript, and the
+          values on screen can never belong to a date other than the one above.
+        */}
+        <div className="flex flex-col gap-3 border-t border-border pt-6">
+          <form method="get" action="/log" className="flex flex-col gap-2">
+            <label htmlFor="jump" className={label}>
+              Edit another date
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="jump"
+                name="date"
+                type="date"
+                defaultValue={date}
+                className={`${field} font-mono`}
+              />
+              <button
+                type="submit"
+                className="cursor-pointer rounded-md border border-border bg-surface px-5 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Go
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </main>
   );
