@@ -4,8 +4,8 @@ Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
 ## Where we are
 
-**7 of 11 steps fully done** (0, 1, 2, 3, 4, 5, 6). **4 not started**
-(7, 8, 9, 10).
+**7 of 11 steps fully done** (0-6). **Step 7 is half built** — day fields
+done, activities not started. **3 not started** (8, 9, 10).
 
 **Auth works, verified in production.** Google sign-in, the code exchange and
 route protection are built, and login has been tested end to end on
@@ -13,18 +13,17 @@ route protection are built, and login has been tested end to end on
 after Google consent was correct, which is the only proof the production-origin
 handling works — that branch cannot execute on localhost.
 
-**Next action: Step 7 — the day log form.** The schema exists, RLS is proven
-enforced, and the database is typed end to end. Nothing writes to it yet.
+**Next action: the second half of Step 7** — the activities section on `/log`.
 
-**Realistically ~2 hours of build time left in Phase 1:**
+**Realistically ~1.5 hours of build time left in Phase 1:**
 
 | Remaining | Minutes |
 |---|---|
-| 7. Day log form | 60 |
+| 7. Day log form — activities half only | 30 |
 | 8. List view | 30 |
 | 9. Ship and verify | 20 |
 | 10. Set the gate | 5 |
-| | **~1 hr 55 min** |
+| | **~1 hr 25 min** |
 
 | | |
 |---|---|
@@ -615,7 +614,7 @@ what it proves.
 
 ---
 
-## Step 7 — The day log form (60 min)
+## Step 7 — The day log form (60 min) 🟡 DAY FIELDS DONE
 
 **The core of Phase 1, and deliberately minimal.** One form, one date, a handful
 of fields. No week grid, no charts, no navigation. Those come in Phase 2 once
@@ -646,7 +645,7 @@ Behaviour:
 - weight writes to body_metrics, not days
 - use a Server Action, not a client-side fetch
 - validate with zod on the server
-- on success, show a confirmation and clear the form
+- on success, show a confirmation and leave the saved values visible
 
 Style with our tokens. Mobile-first — I'll use this on my phone more than
 my laptop.
@@ -654,6 +653,39 @@ my laptop.
 Describe your approach to the upsert and the two-table write before you
 start coding.
 ```
+
+> **Corrected after building it.** This step originally said *clear the form* on
+> success. That is wrong for an edit form: the page pre-fills from the stored
+> row, so clearing would blank a form whose data had just been saved, which
+> reads as though the save failed. The confirmation appears and the saved values
+> stay on screen. Resubmitting is harmless, because the write is an upsert.
+
+### ✅ Day fields — built
+
+| File | What it does |
+|---|---|
+| `src/lib/blockers.ts` | The twelve codes plus display labels, in one place |
+| `src/app/log/actions.ts` | `saveDay` Server Action: auth, zod, two upserts |
+| `src/app/log/page.tsx` | The form, pre-filled from the stored row |
+
+**zod** is the one new dependency. It replaces hand-written `FormData` parsing —
+type guards, number coercion, a blank-to-null pass over seven fields, and a
+hand-rolled check of the blocker vocabulary. Its parsed output is typed, so it
+meets the generated database types and a mismatch is a compile error rather than
+a runtime surprise. Server-only, so none of it ships to the browser.
+
+**Today is computed in the profile's timezone, not the server's.** Vercel runs
+in UTC; 01:00 in Asia/Kolkata is still the previous day there, so a naive
+`toISOString()` would default the form to yesterday exactly when logging late at
+night — the most likely moment to use it.
+
+**The two-table write is not atomic, deliberately.** See ARCHITECTURE.md §5,
+*Write semantics*, for the reasoning and the condition for revisiting it.
+
+### ⬜ Activities — not started
+
+The second prompt below. Any number of activity rows per date, distance in
+metres and duration in seconds, pace computed on save.
 
 Then, separately:
 
@@ -756,7 +788,7 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 | 4. Supabase wiring ✅ | 30 |
 | 5. Google OAuth ✅ | 40 |
 | 6. Schema and RLS ✅ | 30 |
-| 7. Day log form | 60 |
+| 7. Day log form — activities half only | 30 |
 | 8. List view | 30 |
 | 9. Ship and verify | 20 |
 | | **~4.5 hrs** |

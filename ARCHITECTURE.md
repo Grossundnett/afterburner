@@ -307,6 +307,41 @@ This is the highest-value data in the system. After three months it tells you wi
 
 **Row-level security:** enable RLS on every table from day one. `user_id = auth.uid()` for owner access, a separate policy for share-token reads. Retrofitting RLS after a viewer dashboard exists is painful.
 
+### Write semantics — decided in phase 1, worth not relitigating
+
+**The day log writes two tables and is deliberately not atomic.** One submit
+lands day fields in `days` and weight in `body_metrics`. PostgREST offers no
+cross-table transaction from the client, so those are two requests and two
+transactions. The atomic alternative is a Postgres function called over `rpc`,
+which means a migration and a second home for write logic in SQL.
+
+It was not taken, because the property that actually matters is already there:
+**both writes are idempotent upserts keyed on `(user_id, date)`.** A partial
+failure therefore cannot duplicate a row or corrupt one — it can only leave one
+of the two unwritten, and resubmitting the identical form repairs it. The cost
+is bounded and self-healing, and the gain from a transaction here is smaller
+than the cost of moving write logic into the database.
+
+The failure worth wording carefully is the day saving while the weight does
+not. Reporting that as a flat failure is how somebody enters a day twice, so the
+message names what landed: *"Day saved. Weight could not be saved."*
+
+**Revisit this if** a single submit ever has to write two tables where a partial
+write is genuinely invalid — gym sets against a parent activity in phase 3 is
+the likely candidate, since a set row without its activity is meaningless in a
+way a missing weight is not.
+
+**Blank means clear, but only for the date being shown.** An edit form whose
+empty fields mean "keep whatever is stored" cannot ever remove a wrong entry, so
+blanks clear. That is only safe while the form displays the stored values, which
+it does — it loads the row for the selected date and pre-fills.
+
+The guard is a hidden `loaded_date` carrying the date the form was rendered for.
+If the submitted date matches it, blanks clear. If it does not — the date input
+was changed to a day whose contents were never displayed — blanks are preserved
+instead. Without that, changing the date picker and saving would silently erase
+another day's entry.
+
 ---
 
 ## 6. Gym logging — modelled on how you already log
