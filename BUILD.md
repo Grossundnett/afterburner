@@ -110,7 +110,7 @@ You will not need `service_role` at all in Phase 1. Save it and forget it.
 
 ---
 
-## Step 1 — Scaffold and deploy an empty app
+## Step 1 — Scaffold and deploy an empty app ✅ DONE
 
 **Why deploy before building anything:** you want the whole pipeline — laptop to
 GitHub to Vercel to a live URL — verified while there is nothing in it that could
