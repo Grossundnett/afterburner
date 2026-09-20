@@ -50,6 +50,12 @@ project shipping.
   `service_role` key to the browser.
 - Store distance in metres and duration in seconds. Convert at the UI boundary
   only.
+- Zero is not blank, except where zero is impossible. Distance, duration and
+  weight treat a typed `0` exactly like an empty field — both mean "not
+  recorded", so both store null. A count where zero is a real observation must
+  store the zero instead: `reps = 0` on a failed set is data, not absence.
+  Confusing the two either rejects a legitimate entry or silently discards a
+  meaningful one.
 - Mobile-first. I will use this on my phone more than my laptop.
 
 ## Stack

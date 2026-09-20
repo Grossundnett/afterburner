@@ -137,17 +137,51 @@ export default async function LogPage({
   return (
     <main data-sport="discipline" className="flex flex-1 justify-center p-5">
       <div className="flex w-full max-w-md flex-col gap-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-[24px] font-semibold tracking-tight text-text">
-            Log a day
-          </h1>
-          {/* The date is stated, not inferred from a picker. Every value below
-              belongs to this date and only this one. */}
-          <p className="font-mono text-[15px] text-accent">
-            {formatDate(date, "long")}
-          </p>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-[24px] font-semibold tracking-tight text-text">
+              Log a day
+            </h1>
+            {/* The date is stated, not inferred from a picker. Every value
+                below belongs to this date and only this one. */}
+            <p className="font-mono text-[15px] text-accent">
+              {formatDate(date, "long")}
+            </p>
+          </div>
+
+          {/*
+            Changing the date is navigation, not part of the save, so it lives
+            in its own method="get" form — the browser's native way to navigate
+            with parameters. Submitting loads /log?date=YYYY-MM-DD and the
+            server re-renders every field below from that date's rows.
+
+            It sits at the top because the date is what the page is about, and
+            on a phone the alternative is scrolling past the whole form to
+            change it.
+          */}
+          <form method="get" action="/log" className="flex flex-col gap-2">
+            <label htmlFor="jump" className={label}>
+              Change date
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="jump"
+                name="date"
+                type="date"
+                defaultValue={date}
+                className={`${field} font-mono`}
+              />
+              <button
+                type="submit"
+                className="cursor-pointer rounded-md border border-border bg-surface px-5 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Go
+              </button>
+            </div>
+          </form>
+
           <p className={label}>
-            Everything except the date is optional. Blank clears.
+            Everything except the date is optional. Blank or zero clears.
           </p>
         </div>
 
@@ -426,37 +460,6 @@ export default async function LogPage({
             >
               Add activity
             </button>
-          </form>
-        </div>
-
-        {/*
-          Changing the date is navigation, not part of the save.
-
-          A method="get" form is the browser's native way to navigate with
-          parameters: submitting it loads /log?date=YYYY-MM-DD and the server
-          re-renders every field from that date's row. No JavaScript, and the
-          values on screen can never belong to a date other than the one above.
-        */}
-        <div className="flex flex-col gap-3 border-t border-border pt-6">
-          <form method="get" action="/log" className="flex flex-col gap-2">
-            <label htmlFor="jump" className={label}>
-              Edit another date
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="jump"
-                name="date"
-                type="date"
-                defaultValue={date}
-                className={`${field} font-mono`}
-              />
-              <button
-                type="submit"
-                className="cursor-pointer rounded-md border border-border bg-surface px-5 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                Go
-              </button>
-            </div>
           </form>
         </div>
       </div>

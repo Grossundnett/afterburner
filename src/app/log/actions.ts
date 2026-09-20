@@ -33,6 +33,37 @@ const blankToNull = (value: unknown) =>
 const optional = <T extends z.ZodTypeAny>(inner: T) =>
   z.preprocess(blankToNull, inner.nullable());
 
+/**
+ * Blank AND zero both mean "not recorded", for quantities that cannot
+ * legitimately be zero.
+ *
+ * Nobody runs zero kilometres, trains for zero minutes or weighs zero
+ * kilograms, so a typed 0 is a person saying "none" rather than reporting a
+ * measurement. Rejecting it is pedantry that blocks a real entry — a gym
+ * session genuinely has no distance.
+ *
+ * This is deliberately NOT the rule everywhere. A count where zero is a real
+ * observation must store the zero: ARCHITECTURE.md section 6 makes the point
+ * that "dips — not able to do any" is reps = 0, which is data, not absence.
+ * Use `optional` for those.
+ *
+ * A negative number is still an error rather than null, because that is a typo
+ * rather than an intention.
+ */
+const blankOrZeroToNull = (value: unknown) => {
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+
+  // Anything non-numeric falls through to the number parser so it produces a
+  // real validation message instead of being silently swallowed as null.
+  return Number(trimmed) === 0 ? null : trimmed;
+};
+
+const measurement = <T extends z.ZodTypeAny>(inner: T) =>
+  z.preprocess(blankOrZeroToNull, inner.nullable());
+
 const dayFormSchema = z.object({
   date: z.string().regex(DATE, "Pick a valid date."),
 
@@ -45,7 +76,7 @@ const dayFormSchema = z.object({
   blocker_note: optional(z.string().max(500)),
   notes: optional(z.string().max(2000)),
 
-  weight_kg: optional(
+  weight_kg: measurement(
     z.coerce
       .number()
       .positive("Weight must be a positive number.")
@@ -160,17 +191,18 @@ const activityFormSchema = z.object({
 
   sport: z.enum(SPORTS, { message: "Pick a sport." }),
 
-  // Named for the units a person types. The conversion into stored metres and
+  // Zero means none here, same as blank. Named for the units a person types;
+  // the conversion into stored metres and
   // seconds happens below, in this action — the boundary between the form's
-  // units and the domain's. Keeping the field names honest about what they hold
-  // is worth more than converting a line earlier inside the schema.
-  distance_km: optional(
+  // units and the domain's. Keeping the field names honest about what they
+  // hold is worth more than converting a line earlier inside the schema.
+  distance_km: measurement(
     z.coerce
       .number()
       .positive("Distance must be a positive number.")
       .max(1000, "Distance must be under 1000 km."),
   ),
-  duration_min: optional(
+  duration_min: measurement(
     z.coerce
       .number()
       .positive("Duration must be a positive number.")
