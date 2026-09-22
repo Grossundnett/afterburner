@@ -1,62 +1,16 @@
 import { BLOCKER_CODES, BLOCKER_LABELS } from "@/lib/blockers";
+import { formatDate, isIsoDate, todayIn } from "@/lib/dates";
 import { SPORTS, SPORT_LABELS, sportLabel } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
 
 import { addActivity, removeActivity, saveDay } from "./actions";
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 const field =
   "w-full rounded-md border border-border bg-surface px-3 py-3 text-[16px] text-text " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const label = "text-[13px] tracking-[0.02em] text-text-muted";
-
-/**
- * Today, in the person's own timezone rather than the server's.
- *
- * Vercel runs in UTC. Logging at 01:00 in Asia/Kolkata is still 19:30 the
- * previous day in UTC, so a naive toISOString() would default the form to
- * yesterday exactly when someone is logging late at night — the most likely
- * moment to be using it. en-CA formats as YYYY-MM-DD, which is what the date
- * input wants.
- */
-function todayIn(timeZone: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-  } catch {
-    // An unrecognised timezone string would otherwise throw and take the page
-    // down. UTC is wrong by a few hours; a blank page is wrong entirely.
-    return new Date().toISOString().slice(0, 10);
-  }
-}
-
-/**
- * Formats a YYYY-MM-DD string for display.
- *
- * Built from explicit parts and formatted in UTC on purpose. `new Date("2026-09-19")`
- * parses as UTC midnight, so formatting that in a timezone behind UTC renders
- * the previous day — the calendar date would be off by one for exactly the
- * people this app is for.
- */
-function formatDate(iso: string, style: "long" | "short"): string {
-  const [year, month, day] = iso.split("-").map(Number);
-  const utc = new Date(Date.UTC(year, month - 1, day));
-
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    weekday: style === "long" ? "long" : undefined,
-    day: "numeric",
-    month: style === "long" ? "long" : "short",
-    year: "numeric",
-  }).format(utc);
-}
 
 /** Postgres returns time as HH:MM:SS; the input wants HH:MM. */
 const asInputTime = (value: string | null) => value?.slice(0, 5) ?? "";
@@ -94,10 +48,9 @@ export default async function LogPage({
     .eq("id", userId)
     .maybeSingle();
 
-  const date =
-    params.date && DATE.test(params.date)
-      ? params.date
-      : todayIn(profile?.timezone ?? "UTC");
+  const date = isIsoDate(params.date)
+    ? params.date
+    : todayIn(profile?.timezone ?? "UTC");
 
   // Both reads are filtered by the authenticated user as well as the date. RLS
   // would enforce that anyway; saying it here means the query is correct on its
