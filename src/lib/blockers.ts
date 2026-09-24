@@ -43,3 +43,16 @@ export const BLOCKER_LABELS: Record<BlockerCode, string> = {
   gym_crowded: "Gym crowded",
   other: "Other",
 };
+
+/**
+ * Display label for a blocker code read back from the database.
+ *
+ * The column is plain `text` with no check constraint, so a row can hold
+ * anything — including a code retired from the list above. Falling back to the
+ * stored value keeps such a row readable instead of rendering "undefined".
+ */
+export function blockerLabel(value: string): string {
+  return (BLOCKER_CODES as readonly string[]).includes(value)
+    ? BLOCKER_LABELS[value as BlockerCode]
+    : value;
+}
