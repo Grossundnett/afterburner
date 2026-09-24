@@ -69,3 +69,14 @@ Solo project, single user for now, but multi-tenant-ready by design — every
 table carries `user_id` and RLS enforces isolation in the database rather than
 the application. It also doubles as a portfolio piece, so architectural
 decisions should be defensible and worth explaining in a README.
+
+
+## Token budget
+
+- Skip the sketch for changes under ~20 lines or pure bug fixes. Just do it
+  and say what changed in one or two lines. Sketch-first stays for new
+  modules and anything touching auth, RLS or the schema.
+- Keep per-file explanations to 2-3 lines unless I ask for more.
+- No status reports, verification summaries or HTML reports unless I
+  explicitly ask. BUILD.md is the status.
+- Run typecheck/lint/build once before committing, not after every edit.

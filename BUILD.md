@@ -4,7 +4,7 @@ Companion to `ARCHITECTURE.md`. Phase 1 in full, with prompts.
 
 ## Where we are
 
-**8 of 11 steps fully done** (0-7). **3 not started** (8, 9, 10).
+**9 of 11 steps fully done** (0-8). **2 not started** (9, 10).
 
 **Auth works, verified in production.** Google sign-in, the code exchange and
 route protection are built, and login has been tested end to end on
@@ -12,16 +12,20 @@ route protection are built, and login has been tested end to end on
 after Google consent was correct, which is the only proof the production-origin
 handling works — that branch cannot execute on localhost.
 
-**Next action: Step 8 — the list view at `/days`.**
+**The list view is built.** `/days` renders the last 30 dates newest first,
+with skipped days visibly empty, and `/` now redirects there. Verified with
+typecheck, lint and a production build; not yet verified against real data on
+the live URL, which is Step 9.
 
-**Realistically under an hour of build time left in Phase 1:**
+**Next action: Step 9 — ship and verify on the phone.**
+
+**Under half an hour of build time left in Phase 1:**
 
 | Remaining | Minutes |
 |---|---|
-| 8. List view | 30 |
 | 9. Ship and verify | 20 |
 | 10. Set the gate | 5 |
-| | **~55 min** |
+| | **~25 min** |
 
 | | |
 |---|---|
@@ -709,7 +713,7 @@ Each add and remove is its own submit. A page reload per row is fine.
 
 ---
 
-## Step 8 — The list view (30 min)
+## Step 8 — The list view (30 min) ✅ DONE
 
 **Why a list and not a dashboard:** you need to see that your data persisted and
 edit it when you get something wrong. That is all. A dashboard built now would be
@@ -793,7 +797,7 @@ Between now and then: log every day, change nothing. Keep a running note of ever
 | 5. Google OAuth ✅ | 40 |
 | 6. Schema and RLS ✅ | 30 |
 | 7. Day log form — activities half only | 30 |
-| 8. List view | 30 |
+| 8. List view ✅ | 30 |
 | 9. Ship and verify | 20 |
 | | **~4.5 hrs** |
 
