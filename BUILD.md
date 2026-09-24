@@ -17,6 +17,15 @@ with skipped days visibly empty, and `/` now redirects there. Verified with
 typecheck, lint and a production build; not yet verified against real data on
 the live URL, which is Step 9.
 
+**Two fixes from phone testing, both shipped.** Duration carried `step="1"`,
+so the browser rejected 32.49 minutes before the form ever submitted; all three
+measurement inputs now use `step="any"` and leave bounds to the server. The
+save button moved to the head of the day form, where it can no longer be read
+as saving the activities below it.
+
+**Open question, not yet decided:** whether duration should be decimal minutes
+at all, or two `mm` / `ss` inputs. See the note under Step 9.
+
 **Next action: Step 9 — ship and verify on the phone.**
 
 **Under half an hour of build time left in Phase 1:**
@@ -748,6 +757,14 @@ git add -A
 git commit -m "feat: phase 1 — auth, schema, day logging"
 git push
 ```
+
+**Open question — how duration is entered.** It is decimal minutes today.
+A watch reports 32:29, and entering that as 32.48 is arithmetic done in the
+head at the moment of logging, which is where mistakes get made. Two inputs,
+`mm` and `ss`, would take the watch's own reading directly, and `duration_s` is
+already stored in seconds so nothing downstream changes. The cost is a second
+field on a phone keyboard. Undecided — decide it after three weeks of real
+logging rather than now.
 
 Then, on your phone, on the live URL:
 
