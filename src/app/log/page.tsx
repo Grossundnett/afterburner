@@ -162,6 +162,18 @@ export default async function LogPage({
           <input type="hidden" name="date" value={date} />
           <input type="hidden" name="loaded_date" value={date} />
 
+          {/* The save sits at the head of the form, not the foot. At the foot
+              it landed directly above the Activities heading and read as though
+              it saved those too — it does not; activities are a separate form
+              that writes on their own button. Above the fields it submits, the
+              boundary between the two forms is visible without reading a word. */}
+          <button
+            type="submit"
+            className="w-full cursor-pointer rounded-md border border-accent bg-surface px-4 py-3 text-[15px] font-medium text-accent transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            Save day
+          </button>
+
           <div className="flex gap-4">
             <div className="flex flex-1 flex-col gap-2">
               <label htmlFor="wake_time" className={label}>
@@ -194,11 +206,18 @@ export default async function LogPage({
             <label htmlFor="weight_kg" className={label}>
               Weight, kg
             </label>
+            {/* step="any" on every measurement below. A numeric step makes the
+                browser reject anything off the grid — step="1" refused 32.49
+                minutes, step="0.1" would refuse 68.25 kg — and the grid is an
+                artefact of the input, not of the measurement. The server
+                already coerces, bounds and rounds each value, so validation
+                belongs there rather than in an attribute that guesses how
+                precise a scale or a watch is. */}
             <input
               id="weight_kg"
               name="weight_kg"
               type="number"
-              step="0.1"
+              step="any"
               min="0"
               inputMode="decimal"
               defaultValue={metrics?.weight_kg ?? ""}
@@ -253,12 +272,6 @@ export default async function LogPage({
             />
           </div>
 
-          <button
-            type="submit"
-            className="w-full cursor-pointer rounded-md border border-accent bg-surface px-4 py-3 text-[15px] font-medium text-accent transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            Save day
-          </button>
         </form>
 
         {/*
@@ -369,7 +382,7 @@ export default async function LogPage({
                   id="distance_km"
                   name="distance_km"
                   type="number"
-                  step="0.01"
+                  step="any"
                   min="0"
                   inputMode="decimal"
                   className={`${field} font-mono tabular-nums`}
@@ -384,7 +397,7 @@ export default async function LogPage({
                   id="duration_min"
                   name="duration_min"
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
                   inputMode="decimal"
                   className={`${field} font-mono tabular-nums`}
