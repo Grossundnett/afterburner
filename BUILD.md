@@ -28,6 +28,19 @@ at all, or two `mm` / `ss` inputs. See the note under Step 9.
 
 **Next action: Step 9 — ship and verify on the phone.**
 
+### Phase 2 P0 — from `PHASE2.md`
+
+| # | Item | State |
+|---|---|---|
+| 1 | Save day discards unadded activity | **Done.** Entry fields joined the day form; either button saves both. |
+| 2 | Gym/yoga distance and pace | **Done** (minimum fix). Distance hidden by CSS, dropped server-side. Sets model is P1. |
+| 3 | User-extensible sports | **Sketched, awaiting OK.** Touches the schema. |
+| 4 | 24-hour clock | Not started |
+| 5 | Prev/next day on /log and /days | Not started |
+
+Known gap from item 1: Remove on a stored activity is its own form, so it
+still discards unsaved day edits and a half-typed activity.
+
 **Under half an hour of build time left in Phase 1:**
 
 | Remaining | Minutes |
