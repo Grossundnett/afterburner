@@ -5,7 +5,7 @@ metrics, and a discipline layer built around wake time.
 
 **Read `ARCHITECTURE.md` for the full spec** (data model, integrations, design
 tokens). **Read `BUILD.md`** for the ordered build steps and where we currently
-are.
+are. **Read `PHASE2.md`** for the prioritised backlog from a month of real use.
 
 ## How to work with me
 
