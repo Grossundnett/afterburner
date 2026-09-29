@@ -67,6 +67,19 @@ export function formatDate(
 }
 
 /**
+ * The calendar date `delta` days from `iso`. Negative goes backwards.
+ *
+ * UTC arithmetic for the same reason as everything else here: a day is 86.4
+ * million milliseconds only if no clock shifts underneath it, which is exactly
+ * what local time does not guarantee.
+ */
+export function addDays(iso: string, delta: number): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day) + delta * 86_400_000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+/**
  * The `count` calendar dates ending on `endDate`, newest first.
  *
  * This is the spine the list view is built from, and it comes from the calendar

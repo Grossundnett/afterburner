@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { signOut } from "@/app/auth/actions";
 import { blockerLabel } from "@/lib/blockers";
-import { formatDate, lastNDates, todayIn } from "@/lib/dates";
+import { addDays, formatDate, isIsoDate, lastNDates, todayIn } from "@/lib/dates";
 import { labelFor, sportMap } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,7 +14,12 @@ const muted = "text-[13px] tracking-[0.02em] text-text-muted";
 /** Postgres returns time as HH:MM:SS; only the clock part is worth showing. */
 const asClock = (value: string | null | undefined) => value?.slice(0, 5) ?? null;
 
-export default async function DaysPage() {
+export default async function DaysPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ end?: string }>;
+}) {
+  const params = await searchParams;
   const supabase = await createClient();
 
   const { data: claims } = await supabase.auth.getClaims();
@@ -40,9 +45,20 @@ export default async function DaysPage() {
   // The spine comes from the calendar, not from the rows. A list built out of
   // query results would omit the days nothing was logged on, which are exactly
   // the days worth seeing.
-  const dates = lastNDates(todayIn(profile?.timezone ?? "UTC"), WINDOW);
+  // `end` pages the window. Clamped to today so the list never runs into dates
+  // that cannot have been logged yet, and validated so a hand-typed value
+  // cannot produce a nonsense range.
+  const today = todayIn(profile?.timezone ?? "UTC");
+  const requestedEnd = isIsoDate(params.end) ? params.end : today;
+  const end = requestedEnd > today ? today : requestedEnd;
+
+  const dates = lastNDates(end, WINDOW);
   const oldest = dates[dates.length - 1];
   const newest = dates[0];
+
+  const olderEnd = addDays(oldest, -1);
+  const newerEnd = addDays(end, WINDOW);
+  const atToday = end === today;
 
   // Three queries, not one. `days`, `body_metrics` and `activities` each carry
   // their own (user_id, date) and there is no foreign key between them — a
@@ -115,11 +131,51 @@ export default async function DaysPage() {
           </form>
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           <h1 className="text-[24px] font-semibold tracking-tight text-text">
-            Last 30 days
+            {atToday ? "Last 30 days" : "30 days"}
           </h1>
-          <p className={muted}>Tap a day to log or edit it.</p>
+          <p className={`font-mono ${muted}`}>
+            {formatDate(oldest, "row")} — {formatDate(newest, "row")}
+          </p>
+
+          {/* Paging is links rather than a form: it changes what is shown, not
+              what is stored, and a link is the address of the thing shown. */}
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <Link
+              href={`/days?end=${olderEnd}`}
+              className="rounded-md border border-border px-3 py-2 text-[13px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              ← Older
+            </Link>
+
+            {atToday ? (
+              <span className={muted}>Tap a day to log or edit it.</span>
+            ) : (
+              <Link
+                href="/days"
+                className="text-[13px] text-accent underline underline-offset-4 transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Today
+              </Link>
+            )}
+
+            {atToday ? (
+              <span
+                aria-disabled="true"
+                className="px-3 py-2 text-[13px] text-text-muted opacity-40"
+              >
+                Newer →
+              </span>
+            ) : (
+              <Link
+                href={`/days?end=${newerEnd}`}
+                className="rounded-md border border-border px-3 py-2 text-[13px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Newer →
+              </Link>
+            )}
+          </div>
         </div>
 
         <ul className="flex flex-col gap-px">

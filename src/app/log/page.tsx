@@ -1,5 +1,7 @@
+import Link from "next/link";
+
 import { BLOCKER_CODES, BLOCKER_LABELS } from "@/lib/blockers";
-import { formatDate, isIsoDate, todayIn } from "@/lib/dates";
+import { addDays, formatDate, isIsoDate, todayIn } from "@/lib/dates";
 import { hasDistanceFor, labelFor, sportMap } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
@@ -107,15 +109,39 @@ export default async function LogPage({
     <main data-sport="discipline" className="flex flex-1 justify-center p-5">
       <div className="flex w-full max-w-md flex-col gap-6">
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-2">
             <h1 className="text-[24px] font-semibold tracking-tight text-text">
               Log a day
             </h1>
+
             {/* The date is stated, not inferred from a picker. Every value
-                below belongs to this date and only this one. */}
-            <p className="font-mono text-[15px] text-accent">
-              {formatDate(date, "long")}
-            </p>
+                below belongs to this date and only this one.
+
+                Stepping a day is a link, not a control inside the save form:
+                it changes which record is shown, so it navigates and the
+                server re-renders. The same reason the date picker is its own
+                GET form. */}
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/log?date=${addDays(date, -1)}`}
+                aria-label="Previous day"
+                className="rounded-md border border-border px-3 py-2 text-[15px] leading-none text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                ←
+              </Link>
+
+              <p className="flex-1 text-center font-mono text-[15px] text-accent">
+                {formatDate(date, "long")}
+              </p>
+
+              <Link
+                href={`/log?date=${addDays(date, 1)}`}
+                aria-label="Next day"
+                className="rounded-md border border-border px-3 py-2 text-[15px] leading-none text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                →
+              </Link>
+            </div>
           </div>
 
           {/*
