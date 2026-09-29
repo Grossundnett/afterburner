@@ -1,6 +1,6 @@
 import { BLOCKER_CODES, BLOCKER_LABELS } from "@/lib/blockers";
 import { formatDate, isIsoDate, todayIn } from "@/lib/dates";
-import { SPORTS, SPORT_LABELS, sportLabel } from "@/lib/sports";
+import { SPORTS, SPORT_LABELS, hasDistance, sportLabel } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
 
@@ -297,7 +297,8 @@ export default async function LogPage({
                       <span className="text-[14px] font-medium text-text">
                         {sportLabel(activity.sport)}
                       </span>
-                      {activity.distance_m !== null ? (
+                      {activity.distance_m !== null &&
+                      hasDistance(activity.sport) ? (
                         <span className="font-mono text-[13px] tabular-nums text-text-muted">
                           {metresToKm(activity.distance_m).toFixed(2)} km
                         </span>
@@ -307,7 +308,8 @@ export default async function LogPage({
                           {secondsToMinutes(activity.duration_s)} min
                         </span>
                       ) : null}
-                      {activity.avg_pace_s_per_km !== null ? (
+                      {activity.avg_pace_s_per_km !== null &&
+                      hasDistance(activity.sport) ? (
                         <span className="font-mono text-[13px] tabular-nums text-accent">
                           {formatPace(activity.avg_pace_s_per_km)} /km
                         </span>
@@ -339,7 +341,10 @@ export default async function LogPage({
             <p className={label}>Nothing logged for this date yet.</p>
           )}
 
-          <div className="flex flex-col gap-4 rounded-md border border-border bg-surface p-4">
+          <div
+            data-activity-entry
+            className="flex flex-col gap-4 rounded-md border border-border bg-surface p-4"
+          >
 
             <div className="flex flex-col gap-2">
               <label htmlFor="sport" className={label}>
@@ -357,7 +362,11 @@ export default async function LogPage({
               >
                 <option value="">Pick one</option>
                 {SPORTS.map((sport) => (
-                  <option key={sport} value={sport}>
+                  <option
+                    key={sport}
+                    value={sport}
+                    data-no-distance={hasDistance(sport) ? undefined : ""}
+                  >
                     {SPORT_LABELS[sport]}
                   </option>
                 ))}
@@ -365,7 +374,7 @@ export default async function LogPage({
             </div>
 
             <div className="flex gap-4">
-              <div className="flex flex-1 flex-col gap-2">
+              <div data-distance className="flex flex-1 flex-col gap-2">
                 <label htmlFor="distance_km" className={label}>
                   Distance, km
                 </label>

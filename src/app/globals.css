@@ -42,3 +42,12 @@ body {
   color: var(--text);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Sports with no distance (gym, yoga) hide the distance field as soon as one is
+   picked. Pure CSS on the selected option, so the entry form stays a Server
+   Component with no client JavaScript. Which sports qualify is rendered onto
+   each option from src/lib/sports.ts, not listed here. The server drops a
+   distance for these sports too, since a hidden input still submits. */
+[data-activity-entry]:has(option[data-no-distance]:checked) [data-distance] {
+  display: none;
+}

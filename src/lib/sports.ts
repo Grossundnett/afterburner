@@ -25,6 +25,17 @@ export const SPORT_LABELS: Record<Sport, string> = {
 };
 
 /**
+ * Sports where distance means nothing — and so pace means nothing either.
+ * The entry form hides the distance field for these, the server stores no
+ * distance for them, and stored rows show neither.
+ */
+const NO_DISTANCE: readonly Sport[] = ["gym", "yoga"];
+
+export function hasDistance(value: string): boolean {
+  return !(NO_DISTANCE as readonly string[]).includes(value);
+}
+
+/**
  * Display label for a sport value read back from the database.
  *
  * The column is `text`, so a row arrives typed as a plain string even though the

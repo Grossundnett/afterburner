@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { BLOCKER_CODES } from "@/lib/blockers";
-import { SPORTS } from "@/lib/sports";
+import { SPORTS, hasDistance } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import {
   kmToMetres,
@@ -229,8 +229,12 @@ export async function saveDay(formData: FormData) {
   let activityError: { message: string } | null = null;
 
   if (form.sport !== null) {
+    // A distance on a gym or yoga entry was typed before the sport changed and
+    // the field hid itself; the browser still submits it.
     const distanceMetres =
-      form.distance_km === null ? null : kmToMetres(form.distance_km);
+      form.distance_km === null || !hasDistance(form.sport)
+        ? null
+        : kmToMetres(form.distance_km);
     const durationSeconds =
       form.duration_min === null ? null : minutesToSeconds(form.duration_min);
 
