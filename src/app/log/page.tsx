@@ -4,7 +4,7 @@ import { SPORTS, SPORT_LABELS, hasDistance, sportLabel } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
 
-import { removeActivity, saveDay } from "./actions";
+import { saveDay } from "./actions";
 
 const field =
   "w-full rounded-md border border-border bg-surface px-3 py-3 text-[16px] text-text " +
@@ -322,18 +322,24 @@ export default async function LogPage({
                     ) : null}
                   </div>
 
-                  {/* The id is rendered beside the row it belongs to, from the
+                  {/* A submit button of the day form rather than a form of its
+                      own. Its own form would submit only itself, throwing away
+                      unsaved day edits and a half-typed activity — the same
+                      data loss as item 1. A button only sends its name and
+                      value when it is the one that submitted, so Save day
+                      stays unaffected while this carries the row's id.
+
+                      The id is rendered beside the row it belongs to, from the
                       same server render, so the two cannot disagree. */}
-                  <form action={removeActivity}>
-                    <input type="hidden" name="id" value={activity.id} />
-                    <input type="hidden" name="date" value={date} />
-                    <button
-                      type="submit"
-                      className="cursor-pointer rounded-md border border-border px-3 py-2 text-[12px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                    >
-                      Remove
-                    </button>
-                  </form>
+                  <button
+                    type="submit"
+                    form="day"
+                    name="remove_activity"
+                    value={activity.id}
+                    className="cursor-pointer rounded-md border border-border px-3 py-2 text-[12px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    Remove
+                  </button>
                 </li>
               ))}
             </ul>

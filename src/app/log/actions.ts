@@ -70,6 +70,15 @@ const dayFormSchema = z.object({
   // The date the page was rendered for. See the assertion below.
   loaded_date: z.string().regex(DATE).nullable().catch(null),
 
+  // Present only when a row's Remove button was the one that submitted. Those
+  // buttons belong to this form so that removing keeps unsaved day edits and a
+  // half-typed activity, instead of discarding them the way a separate form did.
+  remove_activity: z
+    .string()
+    .regex(UUID)
+    .nullable()
+    .catch(null),
+
   wake_time: optional(z.string().regex(TIME, "Wake time must be HH:MM.")),
   sleep_time: optional(z.string().regex(TIME, "Sleep time must be HH:MM.")),
   blocker_code: optional(z.enum(BLOCKER_CODES)),
@@ -249,58 +258,32 @@ export async function saveDay(formData: FormData) {
     }));
   }
 
-  if (weightError || activityError) {
+  // Removal last, so a row is only dropped once everything meant to be kept
+  // has been written. Filtered by user_id as well as id: RLS would refuse
+  // another user's row anyway, but a delete keyed solely on a guessable id is
+  // the wrong habit to carry into phase 4's share tokens.
+  let removeError: { message: string } | null = null;
+
+  if (form.remove_activity !== null) {
+    ({ error: removeError } = await supabase
+      .from("activities")
+      .delete()
+      .eq("id", form.remove_activity)
+      .eq("user_id", userId));
+  }
+
+  if (weightError || activityError || removeError) {
     const failures = [
       weightError ? `Weight not saved. ${weightError.message}` : null,
       activityError ? `Activity not added. ${activityError.message}` : null,
+      removeError ? `Activity not removed. ${removeError.message}` : null,
     ].filter(Boolean);
     backToForm(form.date, { error: `Day saved. ${failures.join(" ")}` });
   }
 
-  backToForm(form.date, form.sport !== null ? { saved: "1", added: "1" } : { saved: "1" });
-}
-
-/**
- * Removes one activity.
- *
- * Deletes immediately with no confirmation step, which is a deliberate choice:
- * without client JavaScript a confirm dialog means a second round trip and a
- * second screen, and re-entering an activity takes about ten seconds.
- *
- * Filtered by user_id as well as id. RLS would refuse someone else's row
- * anyway, but the query should be correct on its own terms rather than only
- * because the database rescues it — and a delete filtered solely by a guessable
- * id is the wrong habit to build before phase 4 adds share tokens.
- */
-export async function removeActivity(formData: FormData) {
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub;
-
-  if (!userId) {
-    redirect(`/login?next=${encodeURIComponent("/log")}`);
-  }
-
-  const rawId = formData.get("id");
-  const rawDate = formData.get("date");
-
-  const id = typeof rawId === "string" && UUID.test(rawId) ? rawId : null;
-  const date =
-    typeof rawDate === "string" && DATE.test(rawDate) ? rawDate : null;
-
-  if (!id || !date) {
-    backToForm(date ?? "", { error: "That activity could not be removed." });
-  }
-
-  const { error } = await supabase
-    .from("activities")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-
-  if (error) {
-    backToForm(date, { error: `Activity not removed. ${error.message}` });
-  }
-
-  backToForm(date, { removed: "1" });
+  backToForm(form.date, {
+    saved: "1",
+    ...(form.sport !== null ? { added: "1" } : {}),
+    ...(form.remove_activity !== null ? { removed: "1" } : {}),
+  });
 }
