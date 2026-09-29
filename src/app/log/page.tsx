@@ -4,7 +4,7 @@ import { SPORTS, SPORT_LABELS, sportLabel } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
 
-import { addActivity, removeActivity, saveDay } from "./actions";
+import { removeActivity, saveDay } from "./actions";
 
 const field =
   "w-full rounded-md border border-border bg-surface px-3 py-3 text-[16px] text-text " +
@@ -80,10 +80,8 @@ export default async function LogPage({
   // One banner, whichever action just ran. Every action redirects back here
   // with a flag rather than returning a value, so a refresh cannot replay it.
   const status = params.saved
-    ? `Saved for ${formatDate(date, "short")}.`
-    : params.added
-      ? "Activity added."
-      : params.removed
+    ? `Saved for ${formatDate(date, "short")}.${params.added ? " Activity added." : ""}`
+    : params.removed
         ? "Activity removed."
         : null;
 
@@ -156,17 +154,14 @@ export default async function LogPage({
           </p>
         ) : null}
 
-        <form action={saveDay} className="flex flex-col gap-5">
+        <form id="day" action={saveDay} className="flex flex-col gap-5">
           {/* The date is not editable here. Both fields carry what the server
               rendered; the action refuses to write if they disagree. */}
           <input type="hidden" name="date" value={date} />
           <input type="hidden" name="loaded_date" value={date} />
 
-          {/* The save sits at the head of the form, not the foot. At the foot
-              it landed directly above the Activities heading and read as though
-              it saved those too — it does not; activities are a separate form
-              that writes on their own button. Above the fields it submits, the
-              boundary between the two forms is visible without reading a word. */}
+          {/* Saves everything on the page, including an activity typed into
+              the entry fields below — they belong to this form. */}
           <button
             type="submit"
             className="w-full cursor-pointer rounded-md border border-accent bg-surface px-4 py-3 text-[15px] font-medium text-accent transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
@@ -275,15 +270,15 @@ export default async function LogPage({
         </form>
 
         {/*
-          Activities are a separate form from the day, and necessarily so.
-          `days` is keyed on (user_id, date), so its write is an idempotent
-          upsert. `activities` has no such key — you can legitimately run twice
-          in one day — so its write is an insert. Sharing one form would
-          duplicate every activity each time the day was re-saved.
+          Stored activities are a list of server-rendered rows, each carrying
+          its own database id and its own Remove form, so there is no
+          client-side row index that could drift out of step with what is
+          stored.
 
-          Each row is a server-rendered entity carrying its own database id, so
-          there is no client-side row index that could drift out of step with
-          what is stored.
+          The entry fields below the list belong to the day form through the
+          `form="day"` attribute — they cannot sit inside it, because forms
+          cannot nest and the Remove forms are in between. Either button saves
+          the day and the typed activity together; see saveDay.
         */}
         <div className="flex flex-col gap-4 border-t border-border pt-6">
           <h2 className="text-[15px] font-semibold tracking-tight text-text">
@@ -344,27 +339,23 @@ export default async function LogPage({
             <p className={label}>Nothing logged for this date yet.</p>
           )}
 
-          <form
-            action={addActivity}
-            className="flex flex-col gap-4 rounded-md border border-border bg-surface p-4"
-          >
-            <input type="hidden" name="date" value={date} />
-            <input type="hidden" name="loaded_date" value={date} />
+          <div className="flex flex-col gap-4 rounded-md border border-border bg-surface p-4">
 
             <div className="flex flex-col gap-2">
               <label htmlFor="sport" className={label}>
                 Sport
               </label>
+              {/* Not required, and the placeholder not disabled: an empty entry
+                  is the normal case when saving the day, and a disabled option
+                  submits nothing at all rather than a blank. */}
               <select
                 id="sport"
                 name="sport"
-                required
+                form="day"
                 defaultValue=""
                 className={field}
               >
-                <option value="" disabled>
-                  Pick one
-                </option>
+                <option value="">Pick one</option>
                 {SPORTS.map((sport) => (
                   <option key={sport} value={sport}>
                     {SPORT_LABELS[sport]}
@@ -381,6 +372,7 @@ export default async function LogPage({
                 <input
                   id="distance_km"
                   name="distance_km"
+                  form="day"
                   type="number"
                   step="any"
                   min="0"
@@ -396,6 +388,7 @@ export default async function LogPage({
                 <input
                   id="duration_min"
                   name="duration_min"
+                  form="day"
                   type="number"
                   step="any"
                   min="0"
@@ -406,14 +399,14 @@ export default async function LogPage({
             </div>
 
             <div className="flex flex-col gap-2">
-              {/* The day form already owns id="notes", and ids must be unique
-                  on the page for a label to point at the right control. */}
+              {/* The day form already owns "notes", as both id and field name. */}
               <label htmlFor="activity_notes" className={label}>
                 Notes
               </label>
               <input
                 id="activity_notes"
-                name="notes"
+                name="activity_notes"
+                form="day"
                 type="text"
                 maxLength={2000}
                 className={field}
@@ -422,11 +415,12 @@ export default async function LogPage({
 
             <button
               type="submit"
+              form="day"
               className="w-full cursor-pointer rounded-md border border-border bg-surface px-4 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Add activity
             </button>
-          </form>
+          </div>
         </div>
       </div>
     </main>

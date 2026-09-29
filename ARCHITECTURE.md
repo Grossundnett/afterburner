@@ -326,6 +326,19 @@ The failure worth wording carefully is the day saving while the weight does
 not. Reporting that as a flat failure is how somebody enters a day twice, so the
 message names what landed: *"Day saved. Weight could not be saved."*
 
+**One submit saves everything on screen, including a typed activity.** The
+activity entry fields belong to the day form (through the HTML `form`
+attribute, since the activity list and its Remove forms sit between them), and
+both "Save day" and "Add activity" submit it. They were originally a separate
+form, and pressing Save day with a run typed in discarded the run.
+
+The activity is an insert, not an upsert — two runs in a day is legitimate — so
+it is the one non-idempotent write in the submit. Re-saving still cannot
+duplicate it, because the entry fields always render empty: anything submitted
+in them was typed since the last save. A missing sport is checked before any
+write, so it refuses the whole save rather than landing the day and dropping
+the activity. A failed weight does not stop the activity being attempted.
+
 **Revisit this if** a single submit ever has to write two tables where a partial
 write is genuinely invalid — gym sets against a parent activity in phase 3 is
 the likely candidate, since a set row without its activity is meaningless in a

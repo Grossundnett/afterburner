@@ -82,6 +82,30 @@ const dayFormSchema = z.object({
       .positive("Weight must be a positive number.")
       .max(500, "Weight must be under 500 kg."),
   ),
+
+  // The activity entry fields submit with the day. Sport is optional here
+  // because an untouched entry is the normal case; saveDay requires it only
+  // once any other activity field holds data.
+  sport: optional(z.enum(SPORTS, { message: "Pick a sport." })),
+
+  // Zero means none here, same as blank. Named for the units a person types;
+  // the conversion into stored metres and seconds happens in saveDay — the
+  // boundary between the form's units and the domain's.
+  distance_km: measurement(
+    z.coerce
+      .number()
+      .positive("Distance must be a positive number.")
+      .max(1000, "Distance must be under 1000 km."),
+  ),
+  duration_min: measurement(
+    z.coerce
+      .number()
+      .positive("Duration must be a positive number.")
+      .max(1440, "Duration must be under 24 hours."),
+  ),
+
+  // Not "notes": the day form already submits a field by that name.
+  activity_notes: optional(z.string().max(2000)),
 });
 
 function backToForm(date: string, params: Record<string, string>): never {
@@ -90,7 +114,16 @@ function backToForm(date: string, params: Record<string, string>): never {
 }
 
 /**
- * Saves one day.
+ * Saves one day, and the activity being typed if there is one.
+ *
+ * Everything on screen is saved by either button. The activity entry fields
+ * belong to this form (via the HTML `form` attribute, since they render below
+ * the activity list and its Remove forms, and forms cannot nest). When they
+ * were a separate form, pressing Save day with a run typed in discarded the
+ * run — and pressing Add activity discarded any unsaved day edits.
+ *
+ * Re-saving cannot duplicate an activity: the entry fields always render
+ * empty, so a submitted activity is always one typed since the last save.
  *
  * Writes day fields to `days` and weight to `body_metrics` — two tables, two
  * requests, and deliberately NOT one transaction. PostgREST offers no
@@ -144,6 +177,21 @@ export async function saveDay(formData: FormData) {
     });
   }
 
+  // Anything typed in the activity fields means an activity to save. Checked
+  // before any write, so a missing sport refuses the whole save rather than
+  // leaving the day written and the activity silently dropped.
+  const hasActivity =
+    form.sport !== null ||
+    form.distance_km !== null ||
+    form.duration_min !== null ||
+    form.activity_notes !== null;
+
+  if (hasActivity && form.sport === null) {
+    backToForm(form.date, {
+      error: "Nothing was saved. The activity needs a sport.",
+    });
+  }
+
   const { error: dayError } = await supabase.from("days").upsert(
     {
       user_id: userId,
@@ -176,106 +224,36 @@ export async function saveDay(formData: FormData) {
           .eq("user_id", userId)
           .eq("date", form.date);
 
-  if (weightError) {
-    backToForm(form.date, {
-      error: `Day saved. Weight could not be saved. ${weightError.message}`,
-    });
+  // The activity is attempted even if the weight failed. A failed weight is
+  // one number to retype; a skipped activity is the whole entry, lost.
+  let activityError: { message: string } | null = null;
+
+  if (form.sport !== null) {
+    const distanceMetres =
+      form.distance_km === null ? null : kmToMetres(form.distance_km);
+    const durationSeconds =
+      form.duration_min === null ? null : minutesToSeconds(form.duration_min);
+
+    ({ error: activityError } = await supabase.from("activities").insert({
+      user_id: userId,
+      date: form.date,
+      sport: form.sport,
+      distance_m: distanceMetres,
+      duration_s: durationSeconds,
+      avg_pace_s_per_km: paceSecondsPerKm(distanceMetres, durationSeconds),
+      notes: form.activity_notes,
+    }));
   }
 
-  backToForm(form.date, { saved: "1" });
-}
-
-const activityFormSchema = z.object({
-  date: z.string().regex(DATE, "Pick a valid date."),
-  loaded_date: z.string().regex(DATE).nullable().catch(null),
-
-  sport: z.enum(SPORTS, { message: "Pick a sport." }),
-
-  // Zero means none here, same as blank. Named for the units a person types;
-  // the conversion into stored metres and
-  // seconds happens below, in this action — the boundary between the form's
-  // units and the domain's. Keeping the field names honest about what they
-  // hold is worth more than converting a line earlier inside the schema.
-  distance_km: measurement(
-    z.coerce
-      .number()
-      .positive("Distance must be a positive number.")
-      .max(1000, "Distance must be under 1000 km."),
-  ),
-  duration_min: measurement(
-    z.coerce
-      .number()
-      .positive("Duration must be a positive number.")
-      .max(1440, "Duration must be under 24 hours."),
-  ),
-
-  notes: optional(z.string().max(2000)),
-});
-
-/**
- * Adds one activity to a date.
- *
- * Separate from saveDay, and necessarily so. `days` is keyed on
- * (user_id, date) so its write is an idempotent upsert; `activities` has no
- * such key, because you can legitimately run twice in one day, so its write is
- * an insert. Sharing a form would mean every re-save of the day duplicated
- * every activity.
- *
- * Duplicate protection is post/redirect/get: this POSTs and then redirects, so
- * refreshing or going back re-runs the GET rather than replaying the insert.
- * Double-tapping the button will still create two rows — there is no way to
- * disable a button without client JavaScript — but they are visible and one
- * tap removes the extra.
- */
-export async function addActivity(formData: FormData) {
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub;
-
-  if (!userId) {
-    redirect(`/login?next=${encodeURIComponent("/log")}`);
+  if (weightError || activityError) {
+    const failures = [
+      weightError ? `Weight not saved. ${weightError.message}` : null,
+      activityError ? `Activity not added. ${activityError.message}` : null,
+    ].filter(Boolean);
+    backToForm(form.date, { error: `Day saved. ${failures.join(" ")}` });
   }
 
-  const parsed = activityFormSchema.safeParse(Object.fromEntries(formData));
-
-  if (!parsed.success) {
-    const first = parsed.error.issues[0];
-    const fallbackDate = formData.get("date");
-    backToForm(typeof fallbackDate === "string" ? fallbackDate : "", {
-      error: first?.message ?? "That activity could not be added.",
-    });
-  }
-
-  const form = parsed.data;
-
-  // Same assertion as the day form: the page renders one date and submits it
-  // hidden, so these agree unless something went wrong.
-  if (form.loaded_date !== form.date) {
-    backToForm(form.date, {
-      error: "The form was showing a different date. Check the values before adding.",
-    });
-  }
-
-  const distanceMetres =
-    form.distance_km === null ? null : kmToMetres(form.distance_km);
-  const durationSeconds =
-    form.duration_min === null ? null : minutesToSeconds(form.duration_min);
-
-  const { error } = await supabase.from("activities").insert({
-    user_id: userId,
-    date: form.date,
-    sport: form.sport,
-    distance_m: distanceMetres,
-    duration_s: durationSeconds,
-    avg_pace_s_per_km: paceSecondsPerKm(distanceMetres, durationSeconds),
-    notes: form.notes,
-  });
-
-  if (error) {
-    backToForm(form.date, { error: `Activity not added. ${error.message}` });
-  }
-
-  backToForm(form.date, { added: "1" });
+  backToForm(form.date, form.sport !== null ? { saved: "1", added: "1" } : { saved: "1" });
 }
 
 /**
