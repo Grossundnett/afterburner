@@ -34,8 +34,8 @@ at all, or two `mm` / `ss` inputs. See the note under Step 9.
 |---|---|---|
 | 1 | Save day discards unadded activity | **Done.** Entry fields joined the day form; either button saves both. |
 | 2 | Gym/yoga distance and pace | **Done** (minimum fix). Distance hidden by CSS, dropped server-side. Sets model is P1. |
-| 3 | User-extensible sports | **Sketched, awaiting OK.** Touches the schema. |
-| 4 | 24-hour clock | Not started |
+| 3 | User-extensible sports | **Done.** Migration 0002 applied. Sports are rows keyed (user_id, slug) with a composite FK from activities; has_distance is a column. Add-a-sport form on /log. |
+| 4 | 24-hour clock | **Closed, no code.** Display was already 24h; the native time picker follows OS locale and cannot be overridden from HTML. Settled by an OS setting. |
 | 5 | Prev/next day on /log and /days | Not started |
 
 Known gap from item 1: Remove on a stored activity is its own form, so it

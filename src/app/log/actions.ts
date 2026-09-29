@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { BLOCKER_CODES } from "@/lib/blockers";
-import { SPORTS, hasDistance } from "@/lib/sports";
+import { slugify } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import {
   kmToMetres,
@@ -95,7 +95,11 @@ const dayFormSchema = z.object({
   // The activity entry fields submit with the day. Sport is optional here
   // because an untouched entry is the normal case; saveDay requires it only
   // once any other activity field holds data.
-  sport: optional(z.enum(SPORTS, { message: "Pick a sport." })),
+  // Validated against the user's own sports rather than a fixed enum, since
+  // the list is theirs to extend. The composite foreign key is the real
+  // enforcement; the lookup below turns a violation into a readable message
+  // and supplies has_distance at the same time.
+  sport: optional(z.string().min(1).max(40)),
 
   // Zero means none here, same as blank. Named for the units a person types;
   // the conversion into stored metres and seconds happens in saveDay — the
@@ -238,10 +242,25 @@ export async function saveDay(formData: FormData) {
   let activityError: { message: string } | null = null;
 
   if (form.sport !== null) {
+    // Whether a sport carries a distance is now a column, so this both
+    // validates the slug against the user's list and answers that question.
+    const { data: sport } = await supabase
+      .from("sports")
+      .select("has_distance")
+      .eq("user_id", userId)
+      .eq("slug", form.sport)
+      .maybeSingle();
+
+    if (!sport) {
+      backToForm(form.date, {
+        error: "Day saved. That sport is not in your list.",
+      });
+    }
+
     // A distance on a gym or yoga entry was typed before the sport changed and
     // the field hid itself; the browser still submits it.
     const distanceMetres =
-      form.distance_km === null || !hasDistance(form.sport)
+      form.distance_km === null || !sport.has_distance
         ? null
         : kmToMetres(form.distance_km);
     const durationSeconds =
@@ -286,4 +305,74 @@ export async function saveDay(formData: FormData) {
     ...(form.sport !== null ? { added: "1" } : {}),
     ...(form.remove_activity !== null ? { removed: "1" } : {}),
   });
+}
+
+const addSportSchema = z.object({
+  date: z.string().regex(DATE, "Pick a valid date."),
+  label: z
+    .string()
+    .trim()
+    .min(1, "Give the sport a name.")
+    .max(40, "Keep the name under 40 characters."),
+  // An unchecked checkbox submits nothing at all, so absence is false.
+  has_distance: z.literal("on").nullable().catch(null),
+});
+
+/**
+ * Adds a sport to the signed-in user's list.
+ *
+ * PHASE2.md item 9 asked for a way to add activities without code changes, and
+ * item 3 is the same complaint: being sent to the dashboard to add "walk" was
+ * the friction, not the missing row. This is the form that removes it.
+ *
+ * New sports get position 110 so they sort after the seeded set, which ends at
+ * 100 with Other. Within that they order by creation, which is the only order
+ * that means anything for a list someone builds themselves.
+ */
+export async function addSport(formData: FormData) {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims.sub;
+
+  if (!userId) {
+    redirect(`/login?next=${encodeURIComponent("/log")}`);
+  }
+
+  const parsed = addSportSchema.safeParse(Object.fromEntries(formData));
+
+  if (!parsed.success) {
+    const fallback = formData.get("date");
+    backToForm(typeof fallback === "string" ? fallback : "", {
+      error: parsed.error.issues[0]?.message ?? "That sport could not be added.",
+    });
+  }
+
+  const { date, label, has_distance } = parsed.data;
+  const slug = slugify(label);
+
+  if (slug === "") {
+    backToForm(date, { error: "That name has no letters or numbers in it." });
+  }
+
+  const { error } = await supabase.from("sports").insert({
+    user_id: userId,
+    slug,
+    label,
+    has_distance: has_distance !== null,
+    position: 110,
+  });
+
+  if (error) {
+    // 23505 is a unique violation: the slug already exists for this user. Two
+    // labels can slugify to the same thing, so say which name it collided with
+    // rather than reporting a constraint.
+    backToForm(date, {
+      error:
+        error.code === "23505"
+          ? `You already have a sport stored as "${slug}".`
+          : `Sport not added. ${error.message}`,
+    });
+  }
+
+  backToForm(date, { sport_added: "1" });
 }

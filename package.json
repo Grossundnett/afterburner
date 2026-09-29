@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "gen:types": "supabase gen types typescript --project-id ijnemkslclmpjhewydkk > src/lib/database.types.ts",
+    "gen:types": "npx --yes supabase gen types typescript --project-id ijnemkslclmpjhewydkk > src/lib/database.types.ts",
     "test:rls": "node scripts/rls-check.mjs"
   },
   "dependencies": {

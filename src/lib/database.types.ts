@@ -57,7 +57,15 @@ export type Database = {
           sport?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "activities_sport_fkey"
+            columns: ["user_id", "sport"]
+            isOneToOne: false
+            referencedRelation: "sports"
+            referencedColumns: ["user_id", "slug"]
+          },
+        ]
       }
       body_metrics: {
         Row: {
@@ -149,12 +157,39 @@ export type Database = {
         }
         Relationships: []
       }
+      sports: {
+        Row: {
+          created_at: string
+          has_distance: boolean
+          label: string
+          position: number
+          slug: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          has_distance?: boolean
+          label: string
+          position?: number
+          slug: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          has_distance?: boolean
+          label?: string
+          position?: number
+          slug?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      seed_default_sports: { Args: { target: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

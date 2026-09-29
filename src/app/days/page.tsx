@@ -3,7 +3,7 @@ import Link from "next/link";
 import { signOut } from "@/app/auth/actions";
 import { blockerLabel } from "@/lib/blockers";
 import { formatDate, lastNDates, todayIn } from "@/lib/dates";
-import { sportLabel } from "@/lib/sports";
+import { labelFor, sportMap } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 
 /** How far back the list reaches. One screen of scrolling on a phone. */
@@ -51,8 +51,12 @@ export default async function DaysPage() {
   // one purely to serve this screen. Three windowed reads run in parallel and
   // are stitched by date below, which keeps the schema honest about the fact
   // that these are independent observations of the same day.
-  const [{ data: days }, { data: metrics }, { data: activities }] =
-    await Promise.all([
+  const [
+    { data: days },
+    { data: metrics },
+    { data: activities },
+    { data: sportList },
+  ] = await Promise.all([
       supabase
         .from("days")
         .select("date, wake_time, sleep_time, blocker_code")
@@ -71,7 +75,16 @@ export default async function DaysPage() {
         .eq("user_id", userId)
         .gte("date", oldest)
         .lte("date", newest),
+      // A fourth read, but of the vocabulary rather than the window: sports are
+      // the user's own rows now, so a stored slug needs their list to render as
+      // a label.
+      supabase
+        .from("sports")
+        .select("slug, label, has_distance")
+        .eq("user_id", userId),
     ]);
+
+  const bySlug = sportMap(sportList ?? []);
 
   const dayByDate = new Map((days ?? []).map((row) => [row.date, row]));
   const weightByDate = new Map(
@@ -153,7 +166,9 @@ export default async function DaysPage() {
                       {sports.length > 0 ? (
                         <span className="text-accent">
                           {sports.length} ·{" "}
-                          {[...new Set(sports)].map(sportLabel).join(", ")}
+                          {[...new Set(sports)]
+                            .map((slug) => labelFor(bySlug, slug))
+                            .join(", ")}
                         </span>
                       ) : null}
 

@@ -1,10 +1,10 @@
 import { BLOCKER_CODES, BLOCKER_LABELS } from "@/lib/blockers";
 import { formatDate, isIsoDate, todayIn } from "@/lib/dates";
-import { SPORTS, SPORT_LABELS, hasDistance, sportLabel } from "@/lib/sports";
+import { hasDistanceFor, labelFor, sportMap } from "@/lib/sports";
 import { createClient } from "@/lib/supabase/server";
 import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
 
-import { saveDay } from "./actions";
+import { addSport, saveDay } from "./actions";
 
 const field =
   "w-full rounded-md border border-border bg-surface px-3 py-3 text-[16px] text-text " +
@@ -23,6 +23,7 @@ export default async function LogPage({
     saved?: string;
     added?: string;
     removed?: string;
+    sport_added?: string;
     error?: string;
   }>;
 }) {
@@ -55,8 +56,12 @@ export default async function LogPage({
   // Both reads are filtered by the authenticated user as well as the date. RLS
   // would enforce that anyway; saying it here means the query is correct on its
   // own terms rather than only because the database rescues it.
-  const [{ data: day }, { data: metrics }, { data: activities }] =
-    await Promise.all([
+  const [
+    { data: day },
+    { data: metrics },
+    { data: activities },
+    { data: sports },
+  ] = await Promise.all([
       supabase
         .from("days")
         .select("wake_time, sleep_time, blocker_code, blocker_note, notes")
@@ -75,14 +80,27 @@ export default async function LogPage({
         .eq("user_id", userId)
         .eq("date", date)
         .order("created_at", { ascending: true }),
+      // The sport vocabulary is the user's own, so it is read rather than
+      // imported. Position orders the seeded set; created_at orders anything
+      // added since, which all share position 110.
+      supabase
+        .from("sports")
+        .select("slug, label, has_distance")
+        .eq("user_id", userId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
     ]);
+
+  const bySlug = sportMap(sports ?? []);
 
   // One banner, whichever action just ran. Every action redirects back here
   // with a flag rather than returning a value, so a refresh cannot replay it.
   const status = params.saved
     ? `Saved for ${formatDate(date, "short")}.${params.added ? " Activity added." : ""}`
     : params.removed
-        ? "Activity removed."
+      ? "Activity removed."
+      : params.sport_added
+        ? "Sport added."
         : null;
 
   return (
@@ -295,10 +313,10 @@ export default async function LogPage({
                   <div className="flex flex-1 flex-col gap-1">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                       <span className="text-[14px] font-medium text-text">
-                        {sportLabel(activity.sport)}
+                        {labelFor(bySlug, activity.sport)}
                       </span>
                       {activity.distance_m !== null &&
-                      hasDistance(activity.sport) ? (
+                      hasDistanceFor(bySlug, activity.sport) ? (
                         <span className="font-mono text-[13px] tabular-nums text-text-muted">
                           {metresToKm(activity.distance_m).toFixed(2)} km
                         </span>
@@ -309,7 +327,7 @@ export default async function LogPage({
                         </span>
                       ) : null}
                       {activity.avg_pace_s_per_km !== null &&
-                      hasDistance(activity.sport) ? (
+                      hasDistanceFor(bySlug, activity.sport) ? (
                         <span className="font-mono text-[13px] tabular-nums text-accent">
                           {formatPace(activity.avg_pace_s_per_km)} /km
                         </span>
@@ -367,13 +385,13 @@ export default async function LogPage({
                 className={field}
               >
                 <option value="">Pick one</option>
-                {SPORTS.map((sport) => (
+                {(sports ?? []).map((sport) => (
                   <option
-                    key={sport}
-                    value={sport}
-                    data-no-distance={hasDistance(sport) ? undefined : ""}
+                    key={sport.slug}
+                    value={sport.slug}
+                    data-no-distance={sport.has_distance ? undefined : ""}
                   >
-                    {SPORT_LABELS[sport]}
+                    {sport.label}
                   </option>
                 ))}
               </select>
@@ -437,6 +455,63 @@ export default async function LogPage({
             </button>
           </div>
         </div>
+        {/*
+          Adding a sport is its own form, and its own concern: it changes the
+          vocabulary rather than the day. It sits last because logging is the
+          common path and this is occasional, and it cannot sit inside the day
+          form regardless, since HTML forbids nested forms.
+
+          Submitting reloads the page, so the select above re-renders with the
+          new sport already in it.
+        */}
+        <details className="border-t border-border pt-6">
+          <summary className={`${label} cursor-pointer`}>
+            Add a sport
+          </summary>
+
+          <form
+            action={addSport}
+            className="mt-4 flex flex-col gap-4 rounded-md border border-border bg-surface p-4"
+          >
+            <input type="hidden" name="date" value={date} />
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="sport_label" className={label}>
+                Name
+              </label>
+              <input
+                id="sport_label"
+                name="label"
+                type="text"
+                required
+                maxLength={40}
+                placeholder="Badminton"
+                className={field}
+              />
+            </div>
+
+            <label
+              htmlFor="sport_has_distance"
+              className="flex items-center gap-3 text-[14px] text-text"
+            >
+              <input
+                id="sport_has_distance"
+                name="has_distance"
+                type="checkbox"
+                className="size-4 accent-[var(--accent)]"
+              />
+              This sport covers a distance
+            </label>
+
+            <button
+              type="submit"
+              className="w-full cursor-pointer rounded-md border border-border bg-surface px-4 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              Add sport
+            </button>
+          </form>
+        </details>
+
       </div>
     </main>
   );

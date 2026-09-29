@@ -35,8 +35,16 @@ Fix: move sports to a lookup table with a seeded default set, or drop the check
 constraint and validate in the app against a user-extensible list. Seed with
 walk, pace-walk, tennis, football alongside the existing six.
 
-### 4. 24-hour clock [14]
-Times should display and input as 24h throughout. Simpler and unambiguous.
+### 4. 24-hour clock [14] — **closed, no code**
+Display was already 24h: Postgres returns `HH:MM:SS` and both pages slice to
+`HH:MM`, which is 24-hour by construction.
+
+Input is a native `<input type="time">`, whose picker follows the browser and OS
+locale. **HTML and CSS cannot override it.** Forcing 24h there would mean a
+custom control, which means client JavaScript and losing the native mobile time
+spinner — a bad trade for a formatting preference.
+
+Resolved by setting the phone and Windows to 24-hour time.
 
 ### 5. In-app date navigation [12]
 Currently editing the URL by hand to move between dates. `/log` has the GET

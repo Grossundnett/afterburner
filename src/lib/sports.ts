@@ -1,50 +1,70 @@
 /**
- * The sport vocabulary.
+ * Sports are rows in the `sports` table, one set per user, not a constant here.
  *
- * Unlike blocker codes, this one IS enforced by the database — `activities.sport`
- * carries `check (sport in ('run','ride','swim','gym','yoga','other'))`. So this
- * list has to match the migration exactly. Adding a sport means a migration as
- * well as an edit here; an unlisted value is rejected by Postgres, not silently
- * stored.
- *
- * The order is the order they appear in the select, which is roughly how often
- * they are likely to be used rather than alphabetical.
+ * They used to be a hardcoded list mirroring a check constraint, which meant a
+ * migration every time a sport was needed. PHASE2.md item 3 moved them into a
+ * table the owner writes to through the app; migration 0002 has the schema and
+ * the default set. What is left here is the small amount of logic that is not
+ * data: turning a typed label into a slug, and looking a slug back up.
  */
 
-export const SPORTS = ["run", "ride", "swim", "gym", "yoga", "other"] as const;
-
-export type Sport = (typeof SPORTS)[number];
-
-export const SPORT_LABELS: Record<Sport, string> = {
-  run: "Run",
-  ride: "Ride",
-  swim: "Swim",
-  gym: "Gym",
-  yoga: "Yoga",
-  other: "Other",
+/** The columns any page needs to render a sport. */
+export type SportOption = {
+  slug: string;
+  label: string;
+  has_distance: boolean;
 };
 
 /**
- * Sports where distance means nothing — and so pace means nothing either.
- * The entry form hides the distance field for these, the server stores no
- * distance for them, and stored rows show neither.
+ * Indexes a user's sports by slug, for the row-by-row lookups a list does.
+ *
+ * Built once per render and passed down, rather than each row scanning the
+ * array.
  */
-const NO_DISTANCE: readonly Sport[] = ["gym", "yoga"];
-
-export function hasDistance(value: string): boolean {
-  return !(NO_DISTANCE as readonly string[]).includes(value);
+export function sportMap(
+  sports: readonly SportOption[],
+): Map<string, SportOption> {
+  return new Map(sports.map((sport) => [sport.slug, sport]));
 }
 
 /**
- * Display label for a sport value read back from the database.
+ * Display label for a stored slug.
  *
- * The column is `text`, so a row arrives typed as a plain string even though the
- * check constraint narrows it. This does the lookup without casting, and falls
- * back to the raw value rather than rendering "undefined" if a row ever holds
- * something this list does not know about.
+ * Falls back to the slug itself. The composite foreign key means a stored sport
+ * always exists in the user's list, so this should not happen — but rendering
+ * the raw value beats rendering "undefined" if it ever does.
  */
-export function sportLabel(value: string): string {
-  return (SPORTS as readonly string[]).includes(value)
-    ? SPORT_LABELS[value as Sport]
-    : value;
+export function labelFor(map: Map<string, SportOption>, slug: string): string {
+  return map.get(slug)?.label ?? slug;
+}
+
+/**
+ * Whether a stored sport carries a distance, and therefore a pace.
+ *
+ * Defaults to true for an unknown slug: showing a distance that exists beats
+ * hiding one, since the failure mode of guessing wrong is invisible data.
+ */
+export function hasDistanceFor(
+  map: Map<string, SportOption>,
+  slug: string,
+): boolean {
+  return map.get(slug)?.has_distance ?? true;
+}
+
+/**
+ * Derives a storage slug from a typed label.
+ *
+ * "Pace walk" becomes pace_walk, matching the seeded defaults so someone who
+ * types a name that already exists collides with it rather than creating a
+ * near-duplicate. Returns an empty string when nothing usable is left, which
+ * the action treats as invalid.
+ */
+export function slugify(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
 }
