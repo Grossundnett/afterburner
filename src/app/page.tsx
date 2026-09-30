@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BlockersChart } from "@/components/blockers-chart";
 import { ContributionGrid } from "@/components/contribution-grid";
 import { SiteHeader } from "@/components/site-header";
 import { SleepWake } from "@/components/sleep-wake";
@@ -122,6 +123,8 @@ export default async function Panel() {
         />
 
         <SleepWake days={days ?? []} today={today} />
+
+        <BlockersChart days={days ?? []} />
       </div>
     </main>
   );
