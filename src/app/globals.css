@@ -51,3 +51,13 @@ body {
 [data-activity-entry]:has(option[data-no-distance]:checked) [data-distance] {
   display: none;
 }
+
+/* --signal marks targets, goals and today. Amber, matching discipline accent,
+   distinct from sport accents so it reads as "system" not "activity". */
+:root {
+  --signal: #F5C542;
+}
+
+@theme inline {
+  --color-signal: var(--signal);
+}

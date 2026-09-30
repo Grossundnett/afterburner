@@ -105,3 +105,30 @@ export function lastNDates(endDate: string, count: number): string[] {
     new Date(end - index * dayMs).toISOString().slice(0, 10),
   );
 }
+
+/**
+ * The Monday of the ISO week containing `iso`. ISO weeks start on Monday.
+ * Used for "this week vs last week" comparisons.
+ */
+export function weekStart(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  const dow = utc.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const daysToMon = dow === 0 ? 6 : dow - 1;
+  const mon = new Date(utc.getTime() - daysToMon * 86_400_000);
+  return mon.toISOString().slice(0, 10);
+}
+
+/** Hours and fractional minutes from a HH:MM or HH:MM:SS string. */
+export function clockToHours(clock: string): number {
+  const [h, m] = clock.split(":").map(Number);
+  return h + (m ?? 0) / 60;
+}
+
+/** Formats decimal hours as HH:MM. */
+export function hoursToClockString(h: number): string {
+  const wrapped = ((h % 24) + 24) % 24;
+  const hh = Math.floor(wrapped);
+  const mm = Math.round((wrapped - hh) * 60);
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}

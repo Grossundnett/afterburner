@@ -84,7 +84,7 @@ export default async function Panel() {
           {formatDate(from, "row")} — {formatDate(today, "row")}
         </p>
 
-        <WeightTrend points={weightPoints} />
+        <WeightTrend points={weightPoints} today={today} />
       </div>
     </main>
   );
