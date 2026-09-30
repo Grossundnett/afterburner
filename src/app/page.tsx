@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { SiteHeader } from "@/components/site-header";
+import { ContributionGrid } from "@/components/contribution-grid";
 import { WeightTrend } from "@/components/weight-trend";
 import { addDays, formatDate, todayIn } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
@@ -48,14 +49,32 @@ export default async function Panel() {
   const today = todayIn(profile?.timezone ?? "UTC");
   const from = addDays(today, -(WINDOW_DAYS - 1));
 
-  const { data: metrics } = await supabase
+  const [{ data: metrics }, { data: activities }] = await Promise.all([
+    supabase
     .from("body_metrics")
     .select("date, weight_kg")
     .eq("user_id", userId)
     .not("weight_kg", "is", null)
     .gte("date", from)
     .lte("date", today)
-    .order("date", { ascending: true });
+    .order("date", { ascending: true }),
+    supabase
+      .from("activities")
+      .select("date, duration_s, sport, distance_m, avg_pace_s_per_km")
+      .eq("user_id", userId)
+      .gte("date", from)
+      .lte("date", today)
+      .order("date", { ascending: true }),
+  ]);
+
+  // Contribution grid: total activity minutes per date.
+  const minutesByDate = new Map<string, number>();
+  for (const a of activities ?? []) {
+    if (a.duration_s !== null) {
+      const prev = minutesByDate.get(a.date) ?? 0;
+      minutesByDate.set(a.date, prev + Math.round(a.duration_s / 60));
+    }
+  }
 
   // Clearing a weight leaves the row with a null, so the filter above matters:
   // a null would otherwise plot as zero and drag the whole axis to the floor.
@@ -83,6 +102,8 @@ export default async function Panel() {
         <p className="font-mono text-[13px] tracking-[0.02em] text-text-muted">
           {formatDate(from, "row")} — {formatDate(today, "row")}
         </p>
+
+        <ContributionGrid today={today} minutesByDate={minutesByDate} />
 
         <WeightTrend points={weightPoints} today={today} />
       </div>
