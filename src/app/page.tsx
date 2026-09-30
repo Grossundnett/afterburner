@@ -93,7 +93,7 @@ export default async function Panel() {
 
   return (
     <main className="flex flex-1 justify-center p-5">
-      <div className="flex w-full max-w-md flex-col gap-5">
+      <div className="flex w-full max-w-[900px] flex-col gap-5">
         <SiteHeader email={email} current="panel" />
 
         <div className="flex items-baseline justify-between gap-3">
@@ -112,22 +112,26 @@ export default async function Panel() {
           {formatDate(from, "row")} — {formatDate(today, "row")}
         </p>
 
+        {/* Grid and weight span full width on all screens */}
         <ContributionGrid today={today} minutesByDate={minutesByDate} />
 
         <WeightTrend points={weightPoints} today={today} />
 
-        <WeekComparison
-          thisDays={thisDays}
-          lastDays={lastDays}
-          thisActivities={thisActivities}
-          lastActivities={lastActivities}
-        />
+        {/* Four cards: single column on mobile, two columns at ≥900px */}
+        <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-2">
+          <WeekComparison
+            thisDays={thisDays}
+            lastDays={lastDays}
+            thisActivities={thisActivities}
+            lastActivities={lastActivities}
+          />
 
-        <SleepWake days={days ?? []} today={today} />
+          <SleepWake days={days ?? []} today={today} />
 
-        <BlockersChart days={days ?? []} />
+          <BlockersChart days={days ?? []} />
 
-        <RunningChart activities={activities ?? []} today={today} />
+          <RunningChart activities={activities ?? []} today={today} />
+        </div>
       </div>
     </main>
   );
