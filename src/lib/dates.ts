@@ -79,6 +79,15 @@ export function addDays(iso: string, delta: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
+/** Whole days from `from` to `to`. Negative when `to` is earlier. */
+export function daysBetween(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  return Math.round(
+    (Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000,
+  );
+}
+
 /**
  * The `count` calendar dates ending on `endDate`, newest first.
  *

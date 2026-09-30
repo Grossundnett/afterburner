@@ -61,7 +61,14 @@ project shipping.
 ## Stack
 
 Next.js App Router · TypeScript · Tailwind · Supabase (Postgres, Auth, RLS,
-Realtime) · Vercel · Recharts
+Realtime) · Vercel
+
+Charts are hand-rolled inline SVG, not a charting library. Recharts was in this
+list and was deliberately dropped: it needs the DOM, so every chart would become
+a client component and ship ~100kb of JS on the page opened most often, and only
+one of the four planned charts is a conventional line chart anyway. The trade is
+no hover tooltips, which is no loss on a phone — values are labelled on the
+chart instead. See `src/lib/chart.ts`.
 
 ## Context
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { signOut } from "@/app/auth/actions";
+import { SiteHeader } from "@/components/site-header";
 import { blockerLabel } from "@/lib/blockers";
 import { addDays, formatDate, isIsoDate, lastNDates, todayIn } from "@/lib/dates";
 import { labelFor, sportMap } from "@/lib/sports";
@@ -119,17 +119,7 @@ export default async function DaysPage({
   return (
     <main data-sport="discipline" className="flex flex-1 justify-center p-5">
       <div className="flex w-full max-w-md flex-col gap-5">
-        <div className="flex items-baseline justify-between gap-3">
-          <span className={`truncate font-mono ${muted}`}>{email}</span>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="cursor-pointer text-[13px] text-text-muted underline underline-offset-4 transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
+        <SiteHeader email={email} current="days" />
 
         <div className="flex flex-col gap-2">
           <h1 className="text-[24px] font-semibold tracking-tight text-text">

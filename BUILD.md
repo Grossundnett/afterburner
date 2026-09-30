@@ -28,6 +28,18 @@ at all, or two `mm` / `ss` inputs. See the note under Step 9.
 
 **Next action: Step 9 — ship and verify on the phone.**
 
+### Phase 2 P1 — the dashboard
+
+| Increment | State |
+|---|---|
+| chart.ts + weight card + / as the Panel | **Done.** Awaiting phone check. |
+| Wake and sleep, with the 07:00 band | Not started. Must use `unwrapClockHours` on sleep only — see chart.ts. |
+| Contribution grid | Not started |
+| Running pace and distance | Not started. **Pace is inverted:** lower is faster, so the axis must flip or be labelled, or an improvement reads as a decline. |
+
+Recharts was dropped from the stack. Charts are hand-rolled inline SVG so they
+stay Server Components and ship no JavaScript; see the Stack note in AGENTS.md.
+
 ### Phase 2 P0 — from `PHASE2.md`
 
 | # | Item | State |
