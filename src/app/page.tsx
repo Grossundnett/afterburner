@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ContributionGrid } from "@/components/contribution-grid";
 import { SiteHeader } from "@/components/site-header";
+import { SleepWake } from "@/components/sleep-wake";
 import { WeekComparison } from "@/components/week-comparison";
 import { WeightTrend } from "@/components/weight-trend";
 import { addDays, formatDate, todayIn, weekStart } from "@/lib/dates";
@@ -119,6 +120,8 @@ export default async function Panel() {
           thisActivities={thisActivities}
           lastActivities={lastActivities}
         />
+
+        <SleepWake days={days ?? []} today={today} />
       </div>
     </main>
   );
