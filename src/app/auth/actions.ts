@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getClaims } from "@/lib/supabase/server";
 import { originFromHeaders, safeNextPath } from "@/lib/url";
 
 /**
@@ -66,12 +66,12 @@ export async function signInWithGoogle(formData: FormData) {
  * a Server Action writes rows and the check carries real weight.
  */
 export async function signOut() {
-  const supabase = await createClient();
-
-  const { data } = await supabase.auth.getClaims();
+  const { data } = await getClaims();
   if (!data?.claims) {
     redirect("/login");
   }
+
+  const supabase = await createClient();
 
   const { error } = await supabase.auth.signOut();
   if (error) loginWithError(error.message);

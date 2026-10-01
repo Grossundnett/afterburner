@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/site-header";
 import { blockerLabel } from "@/lib/blockers";
 import { addDays, formatDate, isIsoDate, lastNDates, todayIn } from "@/lib/dates";
 import { labelFor, sportMap } from "@/lib/sports";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getClaims } from "@/lib/supabase/server";
 
 /** How far back the list reaches. One screen of scrolling on a phone. */
 const WINDOW = 30;
@@ -20,9 +20,7 @@ export default async function DaysPage({
   searchParams: Promise<{ end?: string }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
-
-  const { data: claims } = await supabase.auth.getClaims();
+  const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
   const email = claims?.claims.email;
 
@@ -35,6 +33,8 @@ export default async function DaysPage({
       </main>
     );
   }
+
+  const supabase = await createClient();
 
   const { data: profile } = await supabase
     .from("profiles")

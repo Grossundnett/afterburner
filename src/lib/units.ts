@@ -17,11 +17,6 @@ export function kmToMetres(km: number): number {
   return Math.round(km * 1000);
 }
 
-/** Minutes from the form into stored seconds. */
-export function minutesToSeconds(minutes: number): number {
-  return Math.round(minutes * 60);
-}
-
 /**
  * Stored metres back to kilometres for display.
  *
@@ -32,9 +27,11 @@ export function metresToKm(metres: number): number {
   return Math.round(metres / 10) / 100;
 }
 
-/** Stored seconds back to minutes for display. */
-export function secondsToMinutes(seconds: number): number {
-  return Math.round(seconds / 6) / 10;
+/** Stored seconds back to mm:ss, the shape a watch reports a duration in. */
+export function formatDurationClock(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
 }
 
 /**

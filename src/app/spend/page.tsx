@@ -1,6 +1,6 @@
 import { SiteHeader } from "@/components/site-header";
 import { addDays, isIsoDate, todayIn, weekStart } from "@/lib/dates";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getClaims } from "@/lib/supabase/server";
 
 import { SpendClient, type Expense } from "./SpendClient";
 
@@ -10,9 +10,7 @@ export default async function SpendPage({
   searchParams: Promise<{ week?: string }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
-
-  const { data: claims } = await supabase.auth.getClaims();
+  const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
   const email = claims?.claims.email;
 
@@ -25,6 +23,8 @@ export default async function SpendPage({
       </main>
     );
   }
+
+  const supabase = await createClient();
 
   const { data: profile } = await supabase
     .from("profiles")

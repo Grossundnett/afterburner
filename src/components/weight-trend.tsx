@@ -165,6 +165,10 @@ export function WeightTrend({
         <span>{scale.min.toFixed(1)} low</span>
         <span>{scale.max.toFixed(1)} high</span>
       </div>
+
+      <p className="mt-1 font-mono text-[11px] tracking-[0.02em] text-text-muted">
+        {formatDate(scale.first, "row")} — {formatDate(today, "row")}
+      </p>
     </section>
   );
 }

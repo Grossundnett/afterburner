@@ -53,9 +53,11 @@ function longestStreak(dates: string[], activityDates: Set<string>): number {
 export function ContributionGrid({
   today,
   minutesByDate,
+  activeDates,
 }: {
   today: string;
   minutesByDate: Map<string, number>;
+  activeDates: Set<string>;
 }) {
   // Build 91 dates newest-first (index 0 = today).
   const dates: string[] = [];
@@ -63,14 +65,8 @@ export function ContributionGrid({
     dates.push(addDays(today, -i));
   }
 
-  const activityDates = new Set(
-    [...minutesByDate.entries()]
-      .filter(([, m]) => m > 0)
-      .map(([d]) => d),
-  );
-
-  const curStreak = currentStreak(dates, activityDates);
-  const longStreak = longestStreak(dates, activityDates);
+  const curStreak = currentStreak(dates, activeDates);
+  const longStreak = longestStreak(dates, activeDates);
 
   // Layout: 13 columns (weeks), 7 rows (Mon=0 to Sun=6).
   // dates[0] = today. Position in grid: column from right = Math.floor(i/7),
@@ -127,7 +123,7 @@ export function ContributionGrid({
           viewBox={`0 0 ${svgW} ${svgH}`}
           className="w-full"
           role="img"
-          aria-label={`Activity contribution grid — ${activityDates.size} active days in last 91`}
+          aria-label={`Activity contribution grid — ${activeDates.size} active days in last 91`}
           style={{ maxWidth: svgW }}
         >
           {cells.map(({ date, col, row, minutes, isToday }) => {

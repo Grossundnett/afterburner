@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { todayIn } from "@/lib/dates";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getClaims } from "@/lib/supabase/server";
 
 /** Postgres uuid, as rendered alongside each expense row. */
 const UUID =
@@ -29,13 +29,14 @@ export type ExpenseCategory = (typeof CATEGORIES)[number];
 /** Called from a Client Component, so every action authenticates itself —
  * the proxy matcher protects pages, not the Server Actions mounted on them. */
 async function requireUser() {
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
+  const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
 
   if (!userId) {
     redirect(`/login?next=${encodeURIComponent("/spend")}`);
   }
+
+  const supabase = await createClient();
 
   return { supabase, userId };
 }

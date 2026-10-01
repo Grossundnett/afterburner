@@ -3,8 +3,8 @@ import Link from "next/link";
 import { BLOCKER_CODES, BLOCKER_LABELS } from "@/lib/blockers";
 import { addDays, formatDate, isIsoDate, todayIn } from "@/lib/dates";
 import { hasDistanceFor, labelFor, sportMap } from "@/lib/sports";
-import { createClient } from "@/lib/supabase/server";
-import { formatPace, metresToKm, secondsToMinutes } from "@/lib/units";
+import { createClient, getClaims } from "@/lib/supabase/server";
+import { formatDurationClock, formatPace, metresToKm } from "@/lib/units";
 
 import { addSport, saveDay } from "./actions";
 
@@ -30,9 +30,7 @@ export default async function LogPage({
   }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
-
-  const { data: claims } = await supabase.auth.getClaims();
+  const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
 
   // The proxy redirects before this renders, so this is belt and braces rather
@@ -44,6 +42,8 @@ export default async function LogPage({
       </main>
     );
   }
+
+  const supabase = await createClient();
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -349,7 +349,7 @@ export default async function LogPage({
                       ) : null}
                       {activity.duration_s !== null ? (
                         <span className="font-mono text-[13px] tabular-nums text-text-muted">
-                          {secondsToMinutes(activity.duration_s)} min
+                          {formatDurationClock(activity.duration_s)}
                         </span>
                       ) : null}
                       {activity.avg_pace_s_per_km !== null &&

@@ -8,16 +8,22 @@ import { SleepWake } from "@/components/sleep-wake";
 import { WeekComparison } from "@/components/week-comparison";
 import { WeightTrend } from "@/components/weight-trend";
 import { addDays, formatDate, todayIn, weekStart } from "@/lib/dates";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getClaims } from "@/lib/supabase/server";
 
-const WINDOW_DAYS = 90;
+// Must match the contribution grid's 7x13 cell count (91 days) — a mismatch
+// here means the grid's oldest column has no data to show even when the user
+// logged something that day.
+const WINDOW_DAYS = 91;
 
 export default async function Panel() {
-  const supabase = await createClient();
+  // Temporary instrumentation for the 1.6 go/no-go call — see RESEARCH.md
+  // Area 1. Remove once the breakdown has been read from production logs.
+  const renderStart = performance.now();
 
-  const { data: claims } = await supabase.auth.getClaims();
+  const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
   const email = claims?.claims.email;
+  console.log(`[panel timing] getClaims: ${(performance.now() - renderStart).toFixed(1)}ms`);
 
   if (!userId) {
     return (
@@ -27,15 +33,20 @@ export default async function Panel() {
     );
   }
 
+  const supabase = await createClient();
+
+  const profileStart = performance.now();
   const { data: profile } = await supabase
     .from("profiles")
     .select("timezone")
     .eq("id", userId)
     .maybeSingle();
+  console.log(`[panel timing] profiles query: ${(performance.now() - profileStart).toFixed(1)}ms`);
 
   const today = todayIn(profile?.timezone ?? "UTC");
   const from = addDays(today, -(WINDOW_DAYS - 1));
 
+  const queriesStart = performance.now();
   const [{ data: metrics }, { data: activities }, { data: days }] =
     await Promise.all([
       supabase
@@ -61,9 +72,16 @@ export default async function Panel() {
         .lte("date", today)
         .order("date", { ascending: true }),
     ]);
+  console.log(`[panel timing] Promise.all (3 queries): ${(performance.now() - queriesStart).toFixed(1)}ms`);
 
   const minutesByDate = new Map<string, number>();
+  // Separate from minutesByDate: duration is optional on an activity (a gym
+  // entry can be just a sport, no time typed), so "was something logged" and
+  // "how many minutes" are different questions. The streak answers the first
+  // one — it must not go to zero just because duration was left blank.
+  const activeDates = new Set<string>();
   for (const a of activities ?? []) {
+    activeDates.add(a.date);
     if (a.duration_s !== null) {
       const prev = minutesByDate.get(a.date) ?? 0;
       minutesByDate.set(a.date, prev + Math.round(a.duration_s / 60));
@@ -91,6 +109,8 @@ export default async function Panel() {
     row.weight_kg === null ? [] : [{ date: row.date, value: row.weight_kg }],
   );
 
+  console.log(`[panel timing] total server render: ${(performance.now() - renderStart).toFixed(1)}ms`);
+
   return (
     <main className="flex flex-1 justify-center p-5">
       <div className="flex w-full max-w-[900px] flex-col gap-5">
@@ -113,7 +133,11 @@ export default async function Panel() {
         </p>
 
         {/* Grid and weight span full width on all screens */}
-        <ContributionGrid today={today} minutesByDate={minutesByDate} />
+        <ContributionGrid
+          today={today}
+          minutesByDate={minutesByDate}
+          activeDates={activeDates}
+        />
 
         <WeightTrend points={weightPoints} today={today} />
 

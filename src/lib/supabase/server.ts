@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import type { Database } from "@/lib/database.types";
 
@@ -38,3 +39,18 @@ export async function createClient() {
     },
   );
 }
+
+/**
+ * The signed-in user's claims, verified once per request.
+ *
+ * getClaims() checks the JWT locally against the project's public keys —
+ * once asymmetric JWT signing keys are turned on in the Supabase dashboard,
+ * that's a local check rather than a round trip to the auth server. Wrapped
+ * in React's cache() so, within one request, every Server Component or
+ * Server Action that needs the user shares one result instead of each
+ * re-running the check. (Cheap even without the cache, but free to not repeat.)
+ */
+export const getClaims = cache(async () => {
+  const supabase = await createClient();
+  return supabase.auth.getClaims();
+});

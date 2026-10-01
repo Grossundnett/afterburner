@@ -5,12 +5,8 @@ import { z } from "zod";
 
 import { BLOCKER_CODES } from "@/lib/blockers";
 import { slugify } from "@/lib/sports";
-import { createClient } from "@/lib/supabase/server";
-import {
-  kmToMetres,
-  minutesToSeconds,
-  paceSecondsPerKm,
-} from "@/lib/units";
+import { createClient, getClaims } from "@/lib/supabase/server";
+import { kmToMetres, paceSecondsPerKm } from "@/lib/units";
 
 /** Postgres uuid, as rendered alongside each activity row. */
 const UUID =
@@ -21,6 +17,10 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A time input submits HH:MM, or HH:MM:SS in some browsers. */
 const TIME = /^\d{2}:\d{2}(:\d{2})?$/;
+
+/** A duration typed the way a watch displays it: mm:ss. Minutes can run past
+ *  59 (a long ride is "95:00"), seconds cannot. */
+const CLOCK_DURATION = /^\d{1,4}:[0-5]\d$/;
 
 /**
  * FormData hands back "" for an untouched input, which is not the same thing as
@@ -110,12 +110,26 @@ const dayFormSchema = z.object({
       .positive("Distance must be a positive number.")
       .max(1000, "Distance must be under 1000 km."),
   ),
-  duration_min: measurement(
-    z.coerce
-      .number()
-      .positive("Duration must be a positive number.")
-      .max(1440, "Duration must be under 24 hours."),
-  ),
+  // Typed as mm:ss off a watch — "32:29" — and converted straight to the
+  // stored unit, seconds, rather than through decimal minutes. "00:00" means
+  // not recorded, same as blank, matching the zero-is-blank rule for
+  // distance and weight above.
+  duration_clock: z
+    .preprocess(blankToNull, z.string().nullable())
+    .refine(
+      (v) => v === null || CLOCK_DURATION.test(v.trim()),
+      "Duration must be mm:ss, e.g. 32:29.",
+    )
+    .transform((v) => {
+      if (v === null) return null;
+      const [minutes, seconds] = v.trim().split(":").map(Number);
+      const total = minutes * 60 + seconds;
+      return total === 0 ? null : total;
+    })
+    .refine(
+      (v) => v === null || v <= 86_400,
+      "Duration must be under 24 hours.",
+    ),
 
   // Not "notes": the day form already submits a field by that name.
   activity_notes: optional(z.string().max(2000)),
@@ -160,13 +174,14 @@ export async function saveDay(formData: FormData) {
   // matcher does not cover them. RLS would refuse a forged user_id via its
   // with-check clause, but relying on that yields a confusing database error
   // instead of a clean redirect, and cannot tell "signed out" from "bug".
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
+  const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
 
   if (!userId) {
     redirect(`/login?next=${encodeURIComponent("/log")}`);
   }
+
+  const supabase = await createClient();
 
   const parsed = dayFormSchema.safeParse(Object.fromEntries(formData));
 
@@ -196,7 +211,7 @@ export async function saveDay(formData: FormData) {
   const hasActivity =
     form.sport !== null ||
     form.distance_km !== null ||
-    form.duration_min !== null ||
+    form.duration_clock !== null ||
     form.activity_notes !== null;
 
   if (hasActivity && form.sport === null) {
@@ -263,8 +278,7 @@ export async function saveDay(formData: FormData) {
       form.distance_km === null || !sport.has_distance
         ? null
         : kmToMetres(form.distance_km);
-    const durationSeconds =
-      form.duration_min === null ? null : minutesToSeconds(form.duration_min);
+    const durationSeconds = form.duration_clock;
 
     ({ error: activityError } = await supabase.from("activities").insert({
       user_id: userId,
@@ -330,13 +344,14 @@ const addSportSchema = z.object({
  * that means anything for a list someone builds themselves.
  */
 export async function addSport(formData: FormData) {
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
+  const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
 
   if (!userId) {
     redirect(`/login?next=${encodeURIComponent("/log")}`);
   }
+
+  const supabase = await createClient();
 
   const parsed = addSportSchema.safeParse(Object.fromEntries(formData));
 
