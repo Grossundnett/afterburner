@@ -61,3 +61,50 @@ body {
 @theme inline {
   --color-signal: var(--signal);
 }
+
+/* Spend route — its own visual identity, scoped under [data-spend] so it
+   never leaks into the fitness pages. Redefines the whole palette rather than
+   layering on top of it: this is deliberately a second visual world, not a
+   themed variant of the first. --over has no Afterburner equivalent (the
+   fitness pages have nothing that reads as "you went over"), and --accent-ink
+   is the text colour that sits on top of --accent, which only matters here
+   because the selected category chip inverts to a solid accent fill. */
+[data-spend] {
+  --bg:         #121A17;
+  --surface:    #1A2420;
+  --border:     #2C3833;
+  --text:       #E6ECE7;
+  --text-muted: #9AA69F;
+  --accent:     #6FB8A5;
+  --accent-ink: #0F1714;
+  --signal:     #F2C230;
+  --over:       #FF6B85;
+}
+
+@media (prefers-color-scheme: light) {
+  [data-spend] {
+    --bg:         #EEF1EC;
+    --surface:    #F8FAF6;
+    --border:     #D3DAD2;
+    --text:       #1E2A24;
+    --text-muted: #5E6B64;
+    --accent:     #2F6B5E;
+    --accent-ink: #FFFFFF;
+    --signal:     #F2C230;
+    --over:       #C22E4A;
+  }
+}
+
+@theme inline {
+  --color-over:       var(--over);
+  --color-accent-ink: var(--accent-ink);
+
+  --font-spend-display: var(--font-bricolage);
+  --font-spend-body:    var(--font-atkinson);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-spend] * {
+    transition-duration: 0.001ms !important;
+  }
+}

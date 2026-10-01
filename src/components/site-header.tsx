@@ -14,7 +14,7 @@ export function SiteHeader({
   current,
 }: {
   email?: string;
-  current: "panel" | "days";
+  current: "panel" | "days" | "spend";
 }) {
   const link = (active: boolean) =>
     `text-[13px] underline-offset-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
@@ -30,6 +30,9 @@ export function SiteHeader({
           </Link>
           <Link href="/days" className={link(current === "days")}>
             Days
+          </Link>
+          <Link href="/spend" className={link(current === "spend")}>
+            Spend
           </Link>
         </nav>
 

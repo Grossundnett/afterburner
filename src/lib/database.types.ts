@@ -94,6 +94,36 @@ export type Database = {
         }
         Relationships: []
       }
+      expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          id: string
+          note: string | null
+          spent_on: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          category: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          spent_on: string
+          user_id?: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          spent_on?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       days: {
         Row: {
           blocker_code: string | null
@@ -154,6 +184,24 @@ export type Database = {
           id?: string
           timezone?: string
           wake_target?: string
+        }
+        Relationships: []
+      }
+      spend_settings: {
+        Row: {
+          updated_at: string
+          user_id: string
+          weekly_budget: number
+        }
+        Insert: {
+          updated_at?: string
+          user_id?: string
+          weekly_budget?: number
+        }
+        Update: {
+          updated_at?: string
+          user_id?: string
+          weekly_budget?: number
         }
         Relationships: []
       }
