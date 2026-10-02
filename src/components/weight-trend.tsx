@@ -6,12 +6,15 @@ import {
   splitOnGaps,
   type SeriesPoint,
 } from "@/lib/chart";
-import { formatDate } from "@/lib/dates";
+import { addDays, daysBetween, formatDate } from "@/lib/dates";
+import { Verdict, statusColor, type Status } from "./verdict";
 
 const WIDTH = 320;
 const HEIGHT = 120;
 const MAX_GAP_DAYS = 7;
 const GOAL_KG = 60;
+/** Need at least this many days of trend to trust a projected rate. */
+const MIN_TREND_DAYS = 14;
 
 export function WeightTrend({
   points,
@@ -36,14 +39,65 @@ export function WeightTrend({
   const latest = points[points.length - 1];
   const earliest = points[0];
   const change = latest.value - earliest.value;
-  const falling = change < -0.05;
 
   const ma = movingAverage(points, 7);
   const maSegments = splitOnGaps(ma, MAX_GAP_DAYS);
   const rawSegments = splitOnGaps(points, MAX_GAP_DAYS);
 
-  const goalY = scale.y(GOAL_KG);
-  const showGoal = GOAL_KG >= scale.min && GOAL_KG <= scale.max + (scale.max - scale.min) * 0.2;
+  // Trend rate from the moving average over its trailing MIN_TREND_DAYS,
+  // so one noisy weigh-in can't swing the projection — only the sustained
+  // direction can.
+  const windowStart = addDays(latest.date, -(MIN_TREND_DAYS - 1));
+  const trendPoints = ma.filter((p) => p.date >= windowStart);
+  const trendFirst = trendPoints[0];
+  const trendSpanDays = daysBetween(trendFirst?.date ?? latest.date, latest.date);
+  const rate =
+    trendFirst && trendSpanDays > 0
+      ? (latest.value - trendFirst.value) / trendSpanDays
+      : 0;
+
+  const distanceToGoal = GOAL_KG - latest.value;
+  const atGoal = Math.abs(distanceToGoal) < 0.2;
+  const movingToward = distanceToGoal === 0 || Math.sign(rate) === Math.sign(distanceToGoal);
+  const daysToGoal =
+    !atGoal && movingToward && rate !== 0 ? distanceToGoal / rate : null;
+
+  const CAP_PROJECTION_DAYS = 180;
+  const canProject =
+    daysToGoal !== null && daysToGoal > 0 && daysToGoal <= CAP_PROJECTION_DAYS;
+  const projectedDate = canProject ? addDays(latest.date, Math.round(daysToGoal!)) : null;
+
+  const enoughTrendData = trendSpanDays >= MIN_TREND_DAYS;
+
+  const status: Status = atGoal
+    ? "good"
+    : !enoughTrendData
+      ? "neutral"
+      : canProject
+        ? "good"
+        : movingToward
+          ? "warn"
+          : "bad";
+  const sentence = atGoal
+    ? `At your ${GOAL_KG}kg goal.`
+    : !enoughTrendData
+      ? "Not enough recent data to project a trend."
+      : canProject
+        ? `At this rate: ${GOAL_KG}kg by ${formatDate(projectedDate!, "row")}.`
+        : movingToward
+          ? `Trending toward ${GOAL_KG}kg, but too slowly to project a date yet.`
+          : `Trending away from your ${GOAL_KG}kg goal.`;
+
+  // Chart's x/y domain must cover the projection point too, or the dashed
+  // line and goal marker would be drawn off the edge of the viewBox.
+  const chartEndDate = projectedDate && projectedDate > today ? projectedDate : today;
+  const scaleWithGoal = buildScale(
+    [...points, { date: chartEndDate, value: GOAL_KG }],
+    WIDTH,
+    HEIGHT,
+    { endDate: chartEndDate },
+  )!;
+  const goalY = scaleWithGoal.y(GOAL_KG);
 
   return (
     <section className="rounded-lg border border-border bg-surface p-5">
@@ -54,20 +108,20 @@ export function WeightTrend({
         <span className="text-[15px] text-text-muted"> kg</span>
       </p>
 
-      <p
-        className={`mt-1 font-mono text-[13px] tabular-nums ${falling ? "text-accent" : "text-text-muted"}`}
-      >
+      <p className="mt-1 font-mono text-[13px] tabular-nums text-text-muted">
         {change === 0
           ? "no change"
           : `${change > 0 ? "+" : "−"}${Math.abs(change).toFixed(1)} kg`}{" "}
         since {formatDate(earliest.date, "row")}
       </p>
 
+      <Verdict status={status} sentence={sentence} />
+
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         className="mt-4 w-full"
         role="img"
-        aria-label={`Weight from ${earliest.value.toFixed(1)} to ${latest.value.toFixed(1)} kg`}
+        aria-label={`Weight from ${earliest.value.toFixed(1)} to ${latest.value.toFixed(1)} kg${canProject ? `, projected to reach the ${GOAL_KG}kg goal by ${formatDate(projectedDate!, "row")}` : ""}`}
         preserveAspectRatio="none"
       >
         <defs>
@@ -78,45 +132,37 @@ export function WeightTrend({
         </defs>
 
         {/* Goal line — dashed, signal amber */}
-        {showGoal && (
-          <>
-            <line
-              x1={0}
-              y1={goalY}
-              x2={WIDTH}
-              y2={goalY}
-              stroke="var(--signal)"
-              strokeWidth="1.5"
-              strokeDasharray="4 3"
-              vectorEffect="non-scaling-stroke"
-            />
-            <text
-              x={WIDTH - 2}
-              y={goalY - 3}
-              fill="var(--signal)"
-              fontSize="10"
-              textAnchor="end"
-              fontFamily="var(--font-mono)"
-            >
-              goal
-            </text>
-          </>
-        )}
+        <line
+          x1={0}
+          y1={goalY}
+          x2={WIDTH}
+          y2={goalY}
+          stroke="var(--signal)"
+          strokeWidth="1.5"
+          strokeDasharray="4 3"
+          vectorEffect="non-scaling-stroke"
+        />
+        <text
+          x={WIDTH - 2}
+          y={goalY - 3}
+          fill="var(--signal)"
+          fontSize="10"
+          textAnchor="end"
+          fontFamily="var(--font-mono)"
+        >
+          goal
+        </text>
 
         {/* Gradient fill under MA — drawn before the lines so lines sit on top */}
         {maSegments.map((seg, i) => (
-          <path
-            key={i}
-            d={areaPath(seg, scale)}
-            fill="url(#wgt-fill)"
-          />
+          <path key={i} d={areaPath(seg, scaleWithGoal)} fill="url(#wgt-fill)" />
         ))}
 
         {/* Raw points at 40% — the MA is the signal, raw is context */}
         {rawSegments.map((seg, i) => (
           <path
             key={i}
-            d={linePath(seg, scale)}
+            d={linePath(seg, scaleWithGoal)}
             fill="none"
             stroke="var(--accent)"
             strokeWidth="1.5"
@@ -131,7 +177,7 @@ export function WeightTrend({
         {maSegments.map((seg, i) => (
           <path
             key={i}
-            d={linePath(seg, scale)}
+            d={linePath(seg, scaleWithGoal)}
             fill="none"
             stroke="var(--accent)"
             strokeWidth="2"
@@ -141,12 +187,26 @@ export function WeightTrend({
           />
         ))}
 
+        {/* Dashed projection from the latest trend point to the goal */}
+        {canProject && (
+          <line
+            x1={scaleWithGoal.x(latest.date)}
+            y1={scaleWithGoal.y(latest.value)}
+            x2={scaleWithGoal.x(projectedDate!)}
+            y2={goalY}
+            stroke={statusColor(status)}
+            strokeWidth="1.5"
+            strokeDasharray="3 3"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+
         {/* Data points: surface ring behind accent dot so they read against the line */}
         {points.map((p) => (
           <g key={p.date}>
             <circle
-              cx={scale.x(p.date)}
-              cy={scale.y(p.value)}
+              cx={scaleWithGoal.x(p.date)}
+              cy={scaleWithGoal.y(p.value)}
               r="3.5"
               fill="var(--accent)"
               stroke="var(--surface)"
