@@ -4,12 +4,15 @@ import {
   splitOnGaps,
   type SeriesPoint,
 } from "@/lib/chart";
-import { formatDate } from "@/lib/dates";
+import { addDays, formatDate } from "@/lib/dates";
+import { Verdict, type Status } from "./verdict";
 
 const WIDTH = 320;
 const LINE_H = 100;
 const BAR_H = 40;
 const MAX_GAP_DAYS = 7;
+/** Compare the last 4 weeks of pace against the 4 weeks before that. */
+const BASELINE_WINDOW_DAYS = 28;
 
 type ActivityRow = {
   date: string;
@@ -63,6 +66,31 @@ export function RunningChart({ activities, today }: { activities: readonly Activ
         )
       : null;
 
+  // Own-baseline comparison: last 4 weeks of pace vs the 4 weeks before.
+  const recentStart = addDays(today, -(BASELINE_WINDOW_DAYS - 1));
+  const priorStart = addDays(today, -(BASELINE_WINDOW_DAYS * 2 - 1));
+  const avgPace = (pts: SeriesPoint[]) =>
+    pts.length > 0 ? pts.reduce((s, p) => s + p.value, 0) / pts.length : null;
+  const recentAvg = avgPace(pacePoints.filter((p) => p.date >= recentStart));
+  const priorAvg = avgPace(
+    pacePoints.filter((p) => p.date >= priorStart && p.date < recentStart),
+  );
+
+  let status: Status = "neutral";
+  let sentence = "Not enough recent runs to compare a pace trend.";
+  if (recentAvg !== null && priorAvg !== null) {
+    const diff = recentAvg - priorAvg; // negative = faster
+    if (Math.abs(diff) < 2) {
+      sentence = `Pace steady at ${fmtPace(recentAvg)}/km over the last 4 weeks.`;
+    } else if (diff < 0) {
+      status = "good";
+      sentence = `${fmtPace(recentAvg)}/km over the last 4 weeks, ${Math.round(-diff)}s/km faster than the 4 before.`;
+    } else {
+      status = "warn";
+      sentence = `${fmtPace(recentAvg)}/km over the last 4 weeks, ${Math.round(diff)}s/km slower than the 4 before.`;
+    }
+  }
+
   const paceScale = buildScale(pacePoints, WIDTH, LINE_H, {
     endDate: today,
     invertY: true, // lower pace = faster = should be higher on screen
@@ -87,6 +115,8 @@ export function RunningChart({ activities, today }: { activities: readonly Activ
           </p>
         </div>
       )}
+
+      <Verdict status={status} sentence={sentence} />
 
       {/* Pace chart — inverted y so improvement shows as line going up */}
       {paceScale && pacePoints.length > 0 && (
