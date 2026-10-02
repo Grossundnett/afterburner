@@ -79,6 +79,14 @@ export default async function Panel() {
     }
   }
 
+  // A `days` row exists whenever the log form was saved for that date, even
+  // with every field blank — the closest signal this schema has to "visited
+  // and logged" vs "nothing recorded at all" for the grid's honest-gaps split.
+  const loggedDates = new Set((days ?? []).map((d) => d.date));
+  const blockedDates = new Set(
+    (days ?? []).flatMap((d) => (d.blocker_code ? [d.date] : [])),
+  );
+
   const thisMonday = weekStart(today);
   const lastMonday = addDays(thisMonday, -7);
   const lastSunday = addDays(thisMonday, -1);
@@ -126,6 +134,8 @@ export default async function Panel() {
           today={today}
           minutesByDate={minutesByDate}
           activeDates={activeDates}
+          loggedDates={loggedDates}
+          blockedDates={blockedDates}
         />
 
         <WeightTrend points={weightPoints} today={today} />

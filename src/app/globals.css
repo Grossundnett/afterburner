@@ -62,6 +62,23 @@ body {
   --color-signal: var(--signal);
 }
 
+/* Verdict colours — RESEARCH.md §2.3. Tailwind's 400 step: stays saturated
+   while light enough to clear the 3:1 non-text contrast floor (WCAG 1.4.11)
+   against --surface. Distinct from --signal (targets/goals, always amber)
+   and --accent (which sport this is) — these three never mean the same
+   thing, so they must never share a colour. */
+:root {
+  --good: #4ADE80;
+  --warn: #FBBF24;
+  --bad:  #F87171;
+}
+
+@theme inline {
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad:  var(--bad);
+}
+
 /* Spend route — its own visual identity, scoped under [data-spend] so it
    never leaks into the fitness pages. Redefines the whole palette rather than
    layering on top of it: this is deliberately a second visual world, not a
