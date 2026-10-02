@@ -1,4 +1,5 @@
 import { blockerLabel } from "@/lib/blockers";
+import { Verdict, statusColor, type Status } from "./verdict";
 
 const BAR_H = 16;
 const GAP = 6;
@@ -13,9 +14,11 @@ type DayRow = {
 export function BlockersChart({ days }: { days: readonly DayRow[] }) {
   // Count occurrences of each non-null blocker code.
   const counts = new Map<string, number>();
+  let blockedDays = 0;
   for (const d of days) {
     if (d.blocker_code) {
       counts.set(d.blocker_code, (counts.get(d.blocker_code) ?? 0) + 1);
+      blockedDays++;
     }
   }
 
@@ -36,6 +39,16 @@ export function BlockersChart({ days }: { days: readonly DayRow[] }) {
     .sort((a, b) => b[1] - a[1])
     .map(([code, count]) => ({ code, label: blockerLabel(code), count }));
 
+  const top = rows[0];
+  const topShare = top.count / blockedDays;
+  // A blocker that's over half of every blocked day is worth naming
+  // specifically; below that, no single cause dominates.
+  const status: Status = topShare >= 0.5 ? "bad" : "warn";
+  const sentence =
+    topShare >= 0.5
+      ? `${top.label} is behind over half your blocked days (${top.count} of ${blockedDays}).`
+      : `${top.label} is your most common blocker, ${top.count} time${top.count === 1 ? "" : "s"} in 90 days.`;
+
   const maxCount = rows[0].count;
   const svgH = rows.length * (BAR_H + GAP) - GAP;
   const BAR_AREA_W = 180;
@@ -45,6 +58,13 @@ export function BlockersChart({ days }: { days: readonly DayRow[] }) {
       <p className="text-[13px] tracking-[0.02em] text-text-muted">
         What stops you
       </p>
+
+      <p className="mt-2 font-mono text-[36px] leading-none tabular-nums text-text">
+        {blockedDays}
+        <span className="text-[15px] text-text-muted"> blocked days</span>
+      </p>
+
+      <Verdict status={status} sentence={sentence} />
 
       <svg
         viewBox={`0 0 ${LABEL_W + BAR_AREA_W + COUNT_W} ${svgH}`}
@@ -76,8 +96,8 @@ export function BlockersChart({ days }: { days: readonly DayRow[] }) {
                 width={barW}
                 height={BAR_H}
                 rx={3}
-                fill="var(--accent)"
-                fillOpacity="0.75"
+                fill={i === 0 ? statusColor(status) : "var(--accent)"}
+                fillOpacity={i === 0 ? 0.9 : 0.5}
               >
                 <title>
                   {label}: {count}
