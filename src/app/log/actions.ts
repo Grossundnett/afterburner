@@ -22,6 +22,12 @@ const TIME = /^\d{2}:\d{2}(:\d{2})?$/;
  *  59 (a long ride is "95:00"), seconds cannot. */
 const CLOCK_DURATION = /^\d{1,4}:[0-5]\d$/;
 
+/** A duration typed as bare whole minutes — "30" rather than "30:00" — for
+ *  when there's no watch to copy from. No decimal form: "16.29" is ambiguous
+ *  between minutes.hundredths and a mistyped "16:29", so it stays rejected
+ *  rather than guessed at. */
+const MINUTES_ONLY = /^\d{1,4}$/;
+
 /**
  * FormData hands back "" for an untouched input, which is not the same thing as
  * a value. Everything optional goes through this first so the rest of the
@@ -110,20 +116,30 @@ const dayFormSchema = z.object({
       .positive("Distance must be a positive number.")
       .max(1000, "Distance must be under 1000 km."),
   ),
-  // Typed as mm:ss off a watch — "32:29" — and converted straight to the
-  // stored unit, seconds, rather than through decimal minutes. "00:00" means
-  // not recorded, same as blank, matching the zero-is-blank rule for
-  // distance and weight above.
+  // Typed as mm:ss off a watch — "32:29" — or as bare whole minutes when
+  // there's no watch to copy from — "30". Either converts straight to the
+  // stored unit, seconds, rather than through decimal minutes. "00:00" and
+  // "0" both mean not recorded, same as blank, matching the zero-is-blank
+  // rule for distance and weight above.
   duration_clock: z
     .preprocess(blankToNull, z.string().nullable())
     .refine(
-      (v) => v === null || CLOCK_DURATION.test(v.trim()),
-      "Duration must be mm:ss, e.g. 32:29.",
+      (v) =>
+        v === null ||
+        CLOCK_DURATION.test(v.trim()) ||
+        MINUTES_ONLY.test(v.trim()),
+      "Duration must be mm:ss (e.g. 32:29) or whole minutes (e.g. 30).",
     )
     .transform((v) => {
       if (v === null) return null;
-      const [minutes, seconds] = v.trim().split(":").map(Number);
-      const total = minutes * 60 + seconds;
+      const trimmed = v.trim();
+      let total: number;
+      if (CLOCK_DURATION.test(trimmed)) {
+        const [minutes, seconds] = trimmed.split(":").map(Number);
+        total = minutes * 60 + seconds;
+      } else {
+        total = Number(trimmed) * 60;
+      }
       return total === 0 ? null : total;
     })
     .refine(

@@ -441,17 +441,15 @@ export default async function LogPage({
               </div>
 
               <div className="flex flex-1 flex-col gap-2">
-                <label htmlFor="duration_min" className={label}>
-                  Duration, min
+                <label htmlFor="duration_clock" className={label}>
+                  Duration (mm:ss)
                 </label>
                 <input
-                  id="duration_min"
-                  name="duration_min"
+                  id="duration_clock"
+                  name="duration_clock"
                   form="day"
-                  type="number"
-                  step="any"
-                  min="0"
-                  inputMode="decimal"
+                  type="text"
+                  placeholder="32:29"
                   className={`${field} font-mono tabular-nums`}
                 />
               </div>
