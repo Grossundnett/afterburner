@@ -360,6 +360,79 @@ export async function saveDay(formData: FormData) {
   });
 }
 
+const napSchema = z.object({
+  date: z.string().regex(DATE, "Pick a valid date."),
+  start_time: z.string().regex(TIME, "Start time must be HH:MM."),
+  end_time: z.string().regex(TIME, "End time must be HH:MM."),
+});
+
+export async function addNap(formData: FormData) {
+  const { data: claims } = await getClaims();
+  const userId = claims?.claims.sub;
+  if (!userId) redirect(`/login?next=${encodeURIComponent("/log")}`);
+
+  const supabase = await createClient();
+  const parsed = napSchema.safeParse(Object.fromEntries(formData));
+
+  if (!parsed.success) {
+    const fallback = formData.get("date");
+    backToForm(typeof fallback === "string" ? fallback : "", {
+      error: parsed.error.issues[0]?.message ?? "Nap could not be saved.",
+    });
+  }
+
+  const { date, start_time, end_time } = parsed.data;
+
+  if (start_time >= end_time) {
+    backToForm(date, { error: "End time must be after start time." });
+  }
+
+  const { error } = await supabase
+    .from("naps")
+    .insert({ user_id: userId, date, start_time, end_time });
+
+  if (error) {
+    backToForm(date, { error: `Nap not saved. ${error.message}` });
+  }
+
+  backToForm(date, { nap_added: "1" });
+}
+
+const removeNapSchema = z.object({
+  date: z.string().regex(DATE, "Pick a valid date."),
+  nap_id: z.string().regex(UUID),
+});
+
+export async function removeNap(formData: FormData) {
+  const { data: claims } = await getClaims();
+  const userId = claims?.claims.sub;
+  if (!userId) redirect(`/login?next=${encodeURIComponent("/log")}`);
+
+  const supabase = await createClient();
+  const parsed = removeNapSchema.safeParse(Object.fromEntries(formData));
+
+  if (!parsed.success) {
+    const fallback = formData.get("date");
+    backToForm(typeof fallback === "string" ? fallback : "", {
+      error: "Could not remove nap.",
+    });
+  }
+
+  const { date, nap_id } = parsed.data;
+
+  const { error } = await supabase
+    .from("naps")
+    .delete()
+    .eq("id", nap_id)
+    .eq("user_id", userId);
+
+  if (error) {
+    backToForm(date, { error: `Nap not removed. ${error.message}` });
+  }
+
+  backToForm(date, { nap_removed: "1" });
+}
+
 const addSportSchema = z.object({
   date: z.string().regex(DATE, "Pick a valid date."),
   label: z

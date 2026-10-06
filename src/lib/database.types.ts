@@ -205,6 +205,33 @@ export type Database = {
         }
         Relationships: []
       }
+      naps: {
+        Row: {
+          created_at: string
+          date: string
+          end_time: string
+          id: string
+          start_time: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          end_time: string
+          id?: string
+          start_time: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          end_time?: string
+          id?: string
+          start_time?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       sports: {
         Row: {
           created_at: string

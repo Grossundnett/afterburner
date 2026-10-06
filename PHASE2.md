@@ -74,11 +74,7 @@ rather than one stretched column.
 
 ## P2 — Depth (Phase 3)
 
-### 9. Gym templates [5]
-Store the trainer's prescribed session once; weekly you tick what happened and
-note only the weights that changed. ARCHITECTURE.md §6 has the schema.
-
-### 10. Habits and custom activities [9]
+### 9. Habits and custom activities [9]
 A simple, user-extensible way to add things to track without code changes. Same
 root as item 3 — the app shouldn't need a migration to learn a new word.
 

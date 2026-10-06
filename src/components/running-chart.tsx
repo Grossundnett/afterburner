@@ -13,11 +13,14 @@ const BAR_H = 40;
 const MAX_GAP_DAYS = 7;
 /** Compare the last 4 weeks of pace against the 4 weeks before that. */
 const BASELINE_WINDOW_DAYS = 28;
+const HM_GOAL_S = 90 * 60;    // 1:30:00
+const HM_FLOOR_S = 3 * 3600;  // 3:00:00 — starting point for the progress bar
 
 type ActivityRow = {
   date: string;
   sport: string;
   distance_m: number | null;
+  duration_s: number | null;
   avg_pace_s_per_km: number | null;
 };
 
@@ -25,6 +28,14 @@ function fmtPace(secPerKm: number): string {
   const m = Math.floor(secPerKm / 60);
   const s = Math.round(secPerKm % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtTime(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h === 0) return `${m}:${String(sec).padStart(2, "0")}`;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
 export function RunningChart({ activities, today }: { activities: readonly ActivityRow[]; today: string }) {
@@ -65,6 +76,20 @@ export function RunningChart({ activities, today }: { activities: readonly Activ
             : best,
         )
       : null;
+
+  // Best HM: shortest duration from runs ≥ 21km.
+  const hmCandidates = runs.filter(
+    (a) => a.distance_m !== null && a.distance_m >= 21000 && a.duration_s !== null,
+  );
+  const bestHM =
+    hmCandidates.length > 0
+      ? hmCandidates.reduce((best, a) => (a.duration_s! < best.duration_s! ? a : best))
+      : null;
+  const hmProgress = bestHM
+    ? Math.max(0, Math.min(1, (HM_FLOOR_S - bestHM.duration_s!) / (HM_FLOOR_S - HM_GOAL_S)))
+    : 0;
+  const hmFillW = Math.round(hmProgress * WIDTH);
+  const hmRemaining = bestHM ? bestHM.duration_s! - HM_GOAL_S : null;
 
   // Own-baseline comparison: last 4 weeks of pace vs the 4 weeks before.
   const recentStart = addDays(today, -(BASELINE_WINDOW_DAYS - 1));
@@ -199,6 +224,35 @@ export function RunningChart({ activities, today }: { activities: readonly Activ
             })}
           </svg>
         </>
+      )}
+      {/* Half marathon goal bar */}
+      {bestHM && (
+        <div className="mt-4">
+          <p className="text-[11px] tabular-nums text-text-muted">
+            half marathon goal
+          </p>
+          <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums">
+            <span className="text-[13px] text-text">{fmtTime(bestHM.duration_s!)}</span>
+            <span className="text-[11px] text-text-muted">
+              goal {fmtTime(HM_GOAL_S)}
+            </span>
+          </div>
+          <svg
+            viewBox={`0 0 ${WIDTH} 8`}
+            className="mt-1 w-full"
+            aria-label={`Half marathon progress: best ${fmtTime(bestHM.duration_s!)}, goal ${fmtTime(HM_GOAL_S)}`}
+            preserveAspectRatio="none"
+          >
+            <rect x={0} y={0} width={WIDTH} height={8} rx={4} fill="var(--surface-2)" />
+            <rect x={0} y={0} width={hmFillW} height={8} rx={4} fill="var(--signal)" />
+          </svg>
+          <p className="mt-1 font-mono text-[11px] tabular-nums text-text-muted">
+            {hmRemaining !== null && hmRemaining > 0
+              ? `${fmtTime(hmRemaining)} to go · `
+              : "goal reached · "}
+            best on {formatDate(bestHM.date, "row")}
+          </p>
+        </div>
       )}
     </section>
   );

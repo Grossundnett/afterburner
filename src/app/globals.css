@@ -52,6 +52,13 @@ body {
   display: none;
 }
 
+/* When a no-distance sport is selected, the distance row disappears and the
+   notes textarea has more room. Grow it so gym sessions (multiple exercises
+   per line) have a usable input area. */
+[data-activity-entry]:has(option[data-no-distance]:checked) [data-activity-notes] {
+  min-height: 8rem;
+}
+
 /* --signal marks targets, goals and today. Amber, matching discipline accent,
    distinct from sport accents so it reads as "system" not "activity". */
 :root {

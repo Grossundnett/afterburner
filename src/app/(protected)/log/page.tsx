@@ -8,7 +8,7 @@ import { formatDurationClock, formatPace, metresToKm } from "@/lib/units";
 import { StatusBanner } from "@/components/status-banner";
 import { SubmitButton } from "@/components/submit-button";
 
-import { addSport, saveDay } from "./actions";
+import { addNap, addSport, removeNap, saveDay } from "./actions";
 
 const field =
   "w-full rounded-md border border-border bg-surface px-3 py-3 text-[16px] text-text " +
@@ -28,6 +28,8 @@ export default async function LogPage({
     added?: string;
     removed?: string;
     sport_added?: string;
+    nap_added?: string;
+    nap_removed?: string;
     error?: string;
     edit?: string;
   }>;
@@ -66,6 +68,7 @@ export default async function LogPage({
     { data: metrics },
     { data: activities },
     { data: sports },
+    { data: naps },
   ] = await Promise.all([
       supabase
         .from("days")
@@ -94,6 +97,12 @@ export default async function LogPage({
         .eq("user_id", userId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
+      supabase
+        .from("naps")
+        .select("id, start_time, end_time")
+        .eq("user_id", userId)
+        .eq("date", date)
+        .order("start_time", { ascending: true }),
     ]);
 
   const bySlug = sportMap(sports ?? []);
@@ -124,7 +133,11 @@ export default async function LogPage({
       ? "Activity removed."
       : params.sport_added
         ? "Sport added."
-        : null;
+        : params.nap_added
+          ? "Nap saved."
+          : params.nap_removed
+            ? "Nap removed."
+            : null;
 
   return (
     <main data-sport="discipline" className="flex flex-1 justify-center p-5">
@@ -325,6 +338,72 @@ export default async function LogPage({
 
         </form>
 
+        {/* Naps — separate from the day form; each has its own action. */}
+        <div className="flex flex-col gap-3 border-t border-border pt-6">
+          <h2 className="text-[15px] font-semibold tracking-tight text-text">
+            Naps
+          </h2>
+
+          {naps && naps.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {naps.map((nap) => (
+                <li
+                  key={nap.id}
+                  className="flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2"
+                >
+                  <span className="flex-1 font-mono text-[14px] tabular-nums text-text">
+                    {asInputTime(nap.start_time)} – {asInputTime(nap.end_time)}
+                  </span>
+                  <form action={removeNap}>
+                    <input type="hidden" name="date" value={date} />
+                    <input type="hidden" name="nap_id" value={nap.id} />
+                    <button
+                      type="submit"
+                      className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-[12px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={label}>No naps today.</p>
+          )}
+
+          <form action={addNap} className="flex items-end gap-2">
+            <input type="hidden" name="date" value={date} />
+            <div className="flex flex-1 flex-col gap-2">
+              <label htmlFor="nap_start" className={label}>
+                Start
+              </label>
+              <input
+                id="nap_start"
+                name="start_time"
+                type="time"
+                className={`${field} font-mono`}
+              />
+            </div>
+            <div className="flex flex-1 flex-col gap-2">
+              <label htmlFor="nap_end" className={label}>
+                End
+              </label>
+              <input
+                id="nap_end"
+                name="end_time"
+                type="time"
+                className={`${field} font-mono`}
+              />
+            </div>
+            <button
+              type="submit"
+              className="cursor-pointer rounded-md border border-border bg-surface px-4 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              Add
+            </button>
+          </form>
+        </div>
+
         {/*
           Stored activities are a list of server-rendered rows, each carrying
           its own database id and its own Remove form, so there is no
@@ -508,15 +587,16 @@ export default async function LogPage({
               <label htmlFor="activity_notes" className={label}>
                 Notes
               </label>
-              <input
+              <textarea
                 key={editActivity?.id ?? "new"}
                 id="activity_notes"
                 name="activity_notes"
                 form="day"
-                type="text"
+                rows={3}
                 maxLength={2000}
                 defaultValue={editActivity?.notes ?? ""}
-                className={field}
+                data-activity-notes
+                className={`${field} resize-y`}
               />
             </div>
 
