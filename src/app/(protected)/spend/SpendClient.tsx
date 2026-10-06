@@ -100,7 +100,7 @@ export function SpendClient({
   weekTotals,
 }: Props) {
   const [expenses, applyOptimistic] = useOptimistic(initialExpenses, reduce);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | null>(null);
 
   const weekSun = addDays(weekMon, 6);
@@ -433,9 +433,11 @@ export function SpendClient({
 
         <button
           type="submit"
-          className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing}`}
+          aria-disabled={isPending}
+          className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+          onClick={(e) => { if (isPending) e.preventDefault(); }}
         >
-          Add spend
+          {isPending ? "Adding…" : "Add spend"}
         </button>
       </form>
 
@@ -601,8 +603,13 @@ export function SpendClient({
             >
               Cancel
             </button>
-            <button type="submit" className={`flex-1 rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing}`}>
-              Save budget
+            <button
+              type="submit"
+              aria-disabled={isPending}
+              className={`flex-1 rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+              onClick={(e) => { if (isPending) e.preventDefault(); }}
+            >
+              {isPending ? "Saving…" : "Save budget"}
             </button>
           </div>
         </form>

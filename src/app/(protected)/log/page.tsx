@@ -5,6 +5,8 @@ import { addDays, formatDate, isIsoDate, todayIn } from "@/lib/dates";
 import { hasDistanceFor, labelFor, sportMap } from "@/lib/sports";
 import { createClient, getClaims } from "@/lib/supabase/server";
 import { formatDurationClock, formatPace, metresToKm } from "@/lib/units";
+import { StatusBanner } from "@/components/status-banner";
+import { SubmitButton } from "@/components/submit-button";
 
 import { addSport, saveDay } from "./actions";
 
@@ -181,14 +183,7 @@ export default async function LogPage({
           </p>
         </div>
 
-        {status ? (
-          <p
-            role="status"
-            className="border border-border bg-surface-2 p-3 text-[13px] font-medium text-accent"
-          >
-            {status}
-          </p>
-        ) : null}
+        <StatusBanner message={status} cleanUrl={`/log?date=${date}`} />
 
         {params.error ? (
           <p
@@ -207,12 +202,9 @@ export default async function LogPage({
 
           {/* Saves everything on the page, including an activity typed into
               the entry fields below — they belong to this form. */}
-          <button
-            type="submit"
-            className="w-full cursor-pointer rounded-md border border-accent bg-surface px-4 py-3 text-[15px] font-medium text-accent transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
+          <SubmitButton className="w-full cursor-pointer rounded-md border border-accent bg-surface px-4 py-3 text-[15px] font-medium text-accent transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-disabled:opacity-60 aria-disabled:cursor-not-allowed">
             Save day
-          </button>
+          </SubmitButton>
 
           <div className="flex gap-4">
             <div className="flex flex-1 flex-col gap-2">
@@ -471,13 +463,12 @@ export default async function LogPage({
               />
             </div>
 
-            <button
-              type="submit"
+            <SubmitButton
               form="day"
-              className="w-full cursor-pointer rounded-md border border-border bg-surface px-4 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="w-full cursor-pointer rounded-md border border-border bg-surface px-4 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
             >
               Add activity
-            </button>
+            </SubmitButton>
           </div>
         </div>
         {/*
