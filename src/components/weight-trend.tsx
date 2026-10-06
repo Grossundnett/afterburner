@@ -10,7 +10,7 @@ import { addDays, daysBetween, formatDate } from "@/lib/dates";
 import { Verdict, statusColor, type Status } from "./verdict";
 
 const WIDTH = 320;
-const HEIGHT = 120;
+const HEIGHT = 80;
 const MAX_GAP_DAYS = 7;
 const GOAL_KG = 60;
 /** Need at least this many days of trend to trust a projected rate. */
@@ -119,7 +119,7 @@ export function WeightTrend({
 
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="mt-4 w-full"
+        className="mt-3 w-full"
         role="img"
         aria-label={`Weight from ${earliest.value.toFixed(1)} to ${latest.value.toFixed(1)} kg${canProject ? `, projected to reach the ${GOAL_KG}kg goal by ${formatDate(projectedDate!, "row")}` : ""}`}
         preserveAspectRatio="none"
