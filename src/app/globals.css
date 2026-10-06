@@ -125,3 +125,41 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Panel chart entrance — RESEARCH.md §2.7: a one-time build in reading
+   order, transform/opacity only (compositor-only, no per-frame paint), under
+   `no-preference` so the default is no motion and reduced-motion users see
+   the final state immediately rather than a half-built chart. `backwards`
+   holds each element at its `from` state until its own delay elapses,
+   instead of every element flashing visible for one frame before animating. */
+@media (prefers-reduced-motion: no-preference) {
+  .grid-cell-in {
+    animation: cell-in 220ms ease-out backwards;
+  }
+
+  .mark-in {
+    animation: mark-in 320ms ease-out backwards;
+  }
+}
+
+@keyframes cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.45);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes mark-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
