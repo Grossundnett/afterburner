@@ -244,7 +244,10 @@ export function ContributionGrid({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-[10px] tabular-nums text-text-muted">
-        <span className="flex items-center gap-1.5">
+        <span
+          className="flex items-center gap-1.5"
+          title="No log entry at all — the form was never opened for this day"
+        >
           <span
             className="inline-block h-2.5 w-2.5 rounded-[2px]"
             style={{
@@ -254,14 +257,20 @@ export function ContributionGrid({
           />
           not logged
         </span>
-        <span className="flex items-center gap-1.5">
+        <span
+          className="flex items-center gap-1.5"
+          title="Logged the day, no activity and no blocker — an intentional rest"
+        >
           <span
             className="inline-block h-2.5 w-2.5 rounded-[2px] bg-surface-2"
             style={{ border: "1px solid var(--border)" }}
           />
           rest
         </span>
-        <span className="flex items-center gap-1.5">
+        <span
+          className="flex items-center gap-1.5"
+          title="Logged a blocker (e.g. slept late, work ran over) — something got in the way"
+        >
           <span
             className="inline-block h-2.5 w-2.5 rounded-[2px]"
             style={{
@@ -272,11 +281,17 @@ export function ContributionGrid({
           />
           blocked
         </span>
-        <span className="flex items-center gap-1.5">
+        <span
+          className="flex items-center gap-1.5"
+          title="At least one activity was logged — brighter means more minutes"
+        >
           <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-accent" />
           trained
         </span>
       </div>
+      <p className="mt-1.5 font-mono text-[10px] text-text-muted">
+        Hover a cell for details · blocked = logged a blocker but didn't train
+      </p>
     </section>
   );
 }
