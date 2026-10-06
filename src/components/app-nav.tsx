@@ -62,7 +62,7 @@ export function AppNav({ email }: NavProps) {
         <div className="mx-2 mt-4 border-t border-border pt-4">
           <Link
             href="/log"
-            className="flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-[14px] font-medium bg-accent text-bg transition-opacity hover:opacity-90 active:opacity-80"
+            className="flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-[14px] font-medium bg-signal text-bg transition-opacity hover:opacity-90 active:opacity-80"
           >
             <PlusIcon className="h-4 w-4 shrink-0" />
             Log today
