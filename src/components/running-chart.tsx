@@ -13,8 +13,7 @@ const BAR_H = 40;
 const MAX_GAP_DAYS = 7;
 /** Compare the last 4 weeks of pace against the 4 weeks before that. */
 const BASELINE_WINDOW_DAYS = 28;
-const HM_GOAL_S = 90 * 60;    // 1:30:00
-const HM_FLOOR_S = 3 * 3600;  // 3:00:00 — starting point for the progress bar
+const HM_GOAL_S = 90 * 60; // 1:30:00
 
 type ActivityRow = {
   date: string;
@@ -78,6 +77,8 @@ export function RunningChart({ activities, today }: { activities: readonly Activ
       : null;
 
   // Best HM: shortest duration from runs ≥ 21km.
+  // First HM (oldest by date) is the floor — progress is measured from where
+  // you actually started, not an arbitrary baseline.
   const hmCandidates = runs.filter(
     (a) => a.distance_m !== null && a.distance_m >= 21000 && a.duration_s !== null,
   );
@@ -85,9 +86,16 @@ export function RunningChart({ activities, today }: { activities: readonly Activ
     hmCandidates.length > 0
       ? hmCandidates.reduce((best, a) => (a.duration_s! < best.duration_s! ? a : best))
       : null;
-  const hmProgress = bestHM
-    ? Math.max(0, Math.min(1, (HM_FLOOR_S - bestHM.duration_s!) / (HM_FLOOR_S - HM_GOAL_S)))
-    : 0;
+  const firstHM =
+    hmCandidates.length > 0
+      ? hmCandidates.reduce((oldest, a) => (a.date < oldest.date ? a : oldest))
+      : null;
+  const hmFloorS = firstHM?.duration_s ?? null;
+  const hmRange = hmFloorS !== null ? hmFloorS - HM_GOAL_S : 1;
+  const hmProgress =
+    bestHM && hmFloorS !== null && hmRange > 0
+      ? Math.max(0, Math.min(1, (hmFloorS - bestHM.duration_s!) / hmRange))
+      : 0;
   const hmFillW = Math.round(hmProgress * WIDTH);
   const hmRemaining = bestHM ? bestHM.duration_s! - HM_GOAL_S : null;
 
