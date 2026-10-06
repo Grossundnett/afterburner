@@ -160,6 +160,7 @@ export default async function LogPage({
             </label>
             <div className="flex gap-2">
               <input
+                key={date}
                 id="jump"
                 name="date"
                 type="date"
