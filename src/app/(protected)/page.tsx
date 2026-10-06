@@ -1,9 +1,6 @@
-import Link from "next/link";
-
 import { BlockersChart } from "@/components/blockers-chart";
 import { ContributionGrid } from "@/components/contribution-grid";
 import { RunningChart } from "@/components/running-chart";
-import { SiteHeader } from "@/components/site-header";
 import { SleepWake } from "@/components/sleep-wake";
 import { WeekComparison } from "@/components/week-comparison";
 import { WeightTrend } from "@/components/weight-trend";
@@ -18,7 +15,6 @@ const WINDOW_DAYS = 91;
 export default async function Panel() {
   const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
-  const email = claims?.claims.email;
 
   if (!userId) {
     return (
@@ -111,19 +107,9 @@ export default async function Panel() {
   return (
     <main className="flex flex-1 justify-center p-5">
       <div className="flex w-full max-w-[900px] flex-col gap-5">
-        <SiteHeader email={email} current="panel" />
-
-        <div className="flex items-baseline justify-between gap-3">
-          <h1 className="text-[24px] font-semibold tracking-tight text-text">
-            Panel
-          </h1>
-          <Link
-            href="/log"
-            className="rounded-md border border-accent px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            Log today
-          </Link>
-        </div>
+        <h1 className="text-[24px] font-semibold tracking-tight text-text">
+          Panel
+        </h1>
 
         <p className="font-mono text-[13px] tracking-[0.02em] text-text-muted">
           {formatDate(from, "row")} — {formatDate(today, "row")}

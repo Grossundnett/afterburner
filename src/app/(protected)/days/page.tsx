@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { SiteHeader } from "@/components/site-header";
 import { blockerLabel } from "@/lib/blockers";
 import { addDays, formatDate, isIsoDate, lastNDates, todayIn } from "@/lib/dates";
 import { labelFor, sportMap } from "@/lib/sports";
@@ -22,7 +21,6 @@ export default async function DaysPage({
   const params = await searchParams;
   const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
-  const email = claims?.claims.email;
 
   // The proxy redirects before this renders, so this is belt and braces rather
   // than the real guard — but nothing here may assume a user exists.
@@ -119,8 +117,6 @@ export default async function DaysPage({
   return (
     <main data-sport="discipline" className="flex flex-1 justify-center p-5">
       <div className="flex w-full max-w-md flex-col gap-5">
-        <SiteHeader email={email} current="days" />
-
         <div className="flex flex-col gap-2">
           <h1 className="text-[24px] font-semibold tracking-tight text-text">
             {atToday ? "Last 30 days" : "30 days"}

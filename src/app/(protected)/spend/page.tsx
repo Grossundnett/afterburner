@@ -1,4 +1,3 @@
-import { SiteHeader } from "@/components/site-header";
 import { addDays, isIsoDate, todayIn, weekStart } from "@/lib/dates";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
@@ -12,7 +11,6 @@ export default async function SpendPage({
   const params = await searchParams;
   const { data: claims } = await getClaims();
   const userId = claims?.claims.sub;
-  const email = claims?.claims.email;
 
   // The proxy redirects before this renders, so this is belt and braces rather
   // than the real guard — but nothing here may assume a user exists.
@@ -91,8 +89,6 @@ export default async function SpendPage({
   return (
     <main data-spend className="flex flex-1 justify-center">
       <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-[18px] pt-5 pb-16 [padding-bottom:calc(64px+env(safe-area-inset-bottom))]">
-        <SiteHeader email={email} current="spend" />
-
         <SpendClient
           weekMon={weekMon}
           currentWeekMon={currentWeekMon}
