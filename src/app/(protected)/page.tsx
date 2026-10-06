@@ -115,7 +115,7 @@ export default async function Panel() {
           {formatDate(from, "row")} — {formatDate(today, "row")}
         </p>
 
-        {/* Grid and weight span full width on all screens */}
+        {/* 1. Activity grid — full width */}
         <ContributionGrid
           today={today}
           minutesByDate={minutesByDate}
@@ -124,9 +124,16 @@ export default async function Panel() {
           blockedDates={blockedDates}
         />
 
+        {/* 2. What stops you + Running, side by side */}
+        <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-2">
+          <BlockersChart days={days ?? []} />
+          <RunningChart activities={activities ?? []} today={today} />
+        </div>
+
+        {/* 3. Weight trend — full width */}
         <WeightTrend points={weightPoints} today={today} />
 
-        {/* Four cards: single column on mobile, two columns at ≥900px */}
+        {/* 4. This week vs last + Sleep & wake, side by side */}
         <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-2">
           <WeekComparison
             thisDays={thisDays}
@@ -134,12 +141,7 @@ export default async function Panel() {
             thisActivities={thisActivities}
             lastActivities={lastActivities}
           />
-
           <SleepWake days={days ?? []} today={today} />
-
-          <BlockersChart days={days ?? []} />
-
-          <RunningChart activities={activities ?? []} today={today} />
         </div>
       </div>
     </main>
