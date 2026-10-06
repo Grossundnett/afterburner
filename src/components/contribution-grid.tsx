@@ -5,9 +5,9 @@ import { Verdict } from "./verdict";
 const ROWS = 7;
 const COLS = 13;
 const TOTAL = ROWS * COLS; // 91 days
-const CELL = 22;
-const GAP = 3;
-const RADIUS = 4;
+const CELL = 16;
+const GAP = 2;
+const RADIUS = 3;
 
 /** Minutes thresholds for the 4 trained colour steps (dim accent → full).
  *  Floor raised from the original 35% to 45%: anything dimmer than that sat
@@ -152,26 +152,25 @@ export function ContributionGrid({
     <section className="rounded-lg border border-border bg-surface p-5">
       <p className="text-[13px] tracking-[0.02em] text-text-muted">Activity</p>
 
-      {/* Headline first, matching every other Panel card — the streak was
-          previously stranded below the grid, reading as an afterthought. */}
-      <div className="mt-2 flex gap-6">
-        <div>
-          <p className="font-mono text-[36px] leading-none tabular-nums text-text">
+      {/* Headline: two numbers side by side, compact so the grid dominates. */}
+      <div className="mt-2 flex items-baseline gap-5">
+        <div className="flex items-baseline gap-1.5">
+          <p className="font-mono text-[28px] leading-none tabular-nums text-text">
             {curStreak}
           </p>
-          <p className="mt-1 text-[12px] text-text-muted">day streak</p>
+          <p className="text-[12px] text-text-muted">day streak</p>
         </div>
-        <div>
-          <p className="font-mono text-[36px] leading-none tabular-nums text-text">
+        <div className="flex items-baseline gap-1.5">
+          <p className="font-mono text-[28px] leading-none tabular-nums text-text">
             {longStreak}
           </p>
-          <p className="mt-1 text-[12px] text-text-muted">best streak</p>
+          <p className="text-[12px] text-text-muted">best</p>
         </div>
       </div>
 
       <Verdict status={streakStatus} sentence={streakSentence} />
 
-      <div className="mt-4 flex items-start gap-2">
+      <div className="mt-3 flex items-start gap-2">
         {/* Day labels */}
         <svg width={LABEL_W} height={svgH} aria-hidden="true">
           {dayLabels.map(({ row, label }) => (
