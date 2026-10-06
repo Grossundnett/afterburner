@@ -16,7 +16,7 @@
 }
 
 [data-sport="run"]        { --accent: #FF7A45; }
-[data-sport="ride"]       { --accent: #E0413C; }
+[data-sport="cycling"]    { --accent: #E0413C; }
 [data-sport="swim"]       { --accent: #4ECDC4; }
 [data-sport="gym"]        { --accent: #A78BFA; }
 [data-sport="body"]       { --accent: #8FA3B8; }
