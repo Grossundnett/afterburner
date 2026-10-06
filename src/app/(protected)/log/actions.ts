@@ -85,6 +85,13 @@ const dayFormSchema = z.object({
     .nullable()
     .catch(null),
 
+  // Present when editing an existing activity rather than adding a new one.
+  edit_activity_id: z
+    .string()
+    .regex(UUID)
+    .nullable()
+    .catch(null),
+
   wake_time: optional(z.string().regex(TIME, "Wake time must be HH:MM.")),
   sleep_time: optional(z.string().regex(TIME, "Sleep time must be HH:MM.")),
   blocker_code: optional(z.enum(BLOCKER_CODES)),
@@ -296,15 +303,31 @@ export async function saveDay(formData: FormData) {
         : kmToMetres(form.distance_km);
     const durationSeconds = form.duration_clock;
 
-    ({ error: activityError } = await supabase.from("activities").insert({
-      user_id: userId,
-      date: form.date,
-      sport: form.sport,
-      distance_m: distanceMetres,
-      duration_s: durationSeconds,
-      avg_pace_s_per_km: paceSecondsPerKm(distanceMetres, durationSeconds),
-      notes: form.activity_notes,
-    }));
+    if (form.edit_activity_id !== null) {
+      // Editing an existing activity — UPDATE, not INSERT.
+      // Filtered by user_id so a crafted id cannot touch another user's row.
+      ({ error: activityError } = await supabase
+        .from("activities")
+        .update({
+          sport: form.sport,
+          distance_m: distanceMetres,
+          duration_s: durationSeconds,
+          avg_pace_s_per_km: paceSecondsPerKm(distanceMetres, durationSeconds),
+          notes: form.activity_notes,
+        })
+        .eq("id", form.edit_activity_id)
+        .eq("user_id", userId));
+    } else {
+      ({ error: activityError } = await supabase.from("activities").insert({
+        user_id: userId,
+        date: form.date,
+        sport: form.sport,
+        distance_m: distanceMetres,
+        duration_s: durationSeconds,
+        avg_pace_s_per_km: paceSecondsPerKm(distanceMetres, durationSeconds),
+        notes: form.activity_notes,
+      }));
+    }
   }
 
   // Removal last, so a row is only dropped once everything meant to be kept

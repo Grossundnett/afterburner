@@ -29,6 +29,7 @@ export default async function LogPage({
     removed?: string;
     sport_added?: string;
     error?: string;
+    edit?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -96,6 +97,24 @@ export default async function LogPage({
     ]);
 
   const bySlug = sportMap(sports ?? []);
+
+  // When ?edit=UUID is in the URL, pre-fill the activity entry form.
+  // The UUID regex is the same one used in the action, so invalid values
+  // simply produce no match and the form renders empty as normal.
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const editId = params.edit && UUID_RE.test(params.edit) ? params.edit : null;
+  const editActivity = editId
+    ? (activities ?? []).find((a) => a.id === editId) ?? null
+    : null;
+
+  // Duration in seconds → mm:ss string for the input's defaultValue.
+  const secondsToClock = (s: number | null): string => {
+    if (s === null) return "";
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  };
 
   // One banner, whichever action just ran. Every action redirects back here
   // with a flag rather than returning a value, so a refresh cannot replay it.
@@ -359,24 +378,27 @@ export default async function LogPage({
                     ) : null}
                   </div>
 
-                  {/* A submit button of the day form rather than a form of its
-                      own. Its own form would submit only itself, throwing away
-                      unsaved day edits and a half-typed activity — the same
-                      data loss as item 1. A button only sends its name and
-                      value when it is the one that submitted, so Save day
-                      stays unaffected while this carries the row's id.
+                  <div className="flex shrink-0 gap-2">
+                    {/* Edit: navigate to the same date with ?edit= so the
+                        form pre-fills from this activity's stored values. */}
+                    <Link
+                      href={`/log?date=${date}&edit=${activity.id}`}
+                      className="cursor-pointer rounded-md border border-border px-3 py-2 text-[12px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Edit
+                    </Link>
 
-                      The id is rendered beside the row it belongs to, from the
-                      same server render, so the two cannot disagree. */}
-                  <button
-                    type="submit"
-                    form="day"
-                    name="remove_activity"
-                    value={activity.id}
-                    className="cursor-pointer rounded-md border border-border px-3 py-2 text-[12px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    Remove
-                  </button>
+                    {/* Remove: submit button of the day form (see note above). */}
+                    <button
+                      type="submit"
+                      form="day"
+                      name="remove_activity"
+                      value={activity.id}
+                      className="cursor-pointer rounded-md border border-border px-3 py-2 text-[12px] text-text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -388,6 +410,30 @@ export default async function LogPage({
             data-activity-entry
             className="flex flex-col gap-4 rounded-md border border-border bg-surface p-4"
           >
+            {/* Hidden field: present when editing; absent when adding.
+                The action reads this to choose UPDATE vs INSERT. */}
+            {editActivity ? (
+              <input
+                type="hidden"
+                name="edit_activity_id"
+                form="day"
+                value={editActivity.id}
+              />
+            ) : null}
+
+            {editActivity ? (
+              <div className="flex items-center justify-between">
+                <p className="text-[13px] font-medium text-accent">
+                  Editing activity
+                </p>
+                <Link
+                  href={`/log?date=${date}`}
+                  className="text-[13px] text-text-muted underline underline-offset-2 hover:text-text"
+                >
+                  Cancel
+                </Link>
+              </div>
+            ) : null}
 
             <div className="flex flex-col gap-2">
               <label htmlFor="sport" className={label}>
@@ -397,10 +443,11 @@ export default async function LogPage({
                   is the normal case when saving the day, and a disabled option
                   submits nothing at all rather than a blank. */}
               <select
+                key={editActivity?.id ?? "new"}
                 id="sport"
                 name="sport"
                 form="day"
-                defaultValue=""
+                defaultValue={editActivity?.sport ?? ""}
                 className={field}
               >
                 <option value="">Pick one</option>
@@ -422,6 +469,7 @@ export default async function LogPage({
                   Distance, km
                 </label>
                 <input
+                  key={editActivity?.id ?? "new"}
                   id="distance_km"
                   name="distance_km"
                   form="day"
@@ -429,6 +477,11 @@ export default async function LogPage({
                   step="any"
                   min="0"
                   inputMode="decimal"
+                  defaultValue={
+                    editActivity?.distance_m !== null && editActivity?.distance_m !== undefined
+                      ? metresToKm(editActivity.distance_m).toFixed(2)
+                      : ""
+                  }
                   className={`${field} font-mono tabular-nums`}
                 />
               </div>
@@ -438,11 +491,13 @@ export default async function LogPage({
                   Duration (mm:ss)
                 </label>
                 <input
+                  key={editActivity?.id ?? "new"}
                   id="duration_clock"
                   name="duration_clock"
                   form="day"
                   type="text"
                   placeholder="32:29"
+                  defaultValue={secondsToClock(editActivity?.duration_s ?? null)}
                   className={`${field} font-mono tabular-nums`}
                 />
               </div>
@@ -454,20 +509,23 @@ export default async function LogPage({
                 Notes
               </label>
               <input
+                key={editActivity?.id ?? "new"}
                 id="activity_notes"
                 name="activity_notes"
                 form="day"
                 type="text"
                 maxLength={2000}
+                defaultValue={editActivity?.notes ?? ""}
                 className={field}
               />
             </div>
 
             <SubmitButton
               form="day"
+              pendingLabel="Saving…"
               className="w-full cursor-pointer rounded-md border border-border bg-surface px-4 py-3 text-[15px] font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
             >
-              Add activity
+              {editActivity ? "Update activity" : "Add activity"}
             </SubmitButton>
           </div>
         </div>
