@@ -96,30 +96,192 @@ export type Database = {
       }
       expenses: {
         Row: {
+          account: string | null
           amount: number
           category: string
           created_at: string
+          guilty: boolean
           id: string
           note: string | null
+          source: string
+          source_ts: string | null
           spent_on: string
+          unlabeled: boolean
           user_id: string
+          wallet_category: string | null
         }
         Insert: {
+          account?: string | null
           amount: number
           category: string
           created_at?: string
+          guilty?: boolean
           id?: string
           note?: string | null
+          source?: string
+          source_ts?: string | null
           spent_on: string
+          unlabeled?: boolean
           user_id?: string
+          wallet_category?: string | null
         }
         Update: {
+          account?: string | null
           amount?: number
           category?: string
           created_at?: string
+          guilty?: boolean
           id?: string
           note?: string | null
+          source?: string
+          source_ts?: string | null
           spent_on?: string
+          unlabeled?: boolean
+          user_id?: string
+          wallet_category?: string | null
+        }
+        Relationships: []
+      }
+      money_moves: {
+        Row: {
+          account: string
+          amount: number
+          created_at: string
+          id: string
+          kind: string
+          note: string | null
+          occurred_at: string
+          source_ts: string | null
+          to_account: string | null
+          user_id: string
+        }
+        Insert: {
+          account: string
+          amount: number
+          created_at?: string
+          id?: string
+          kind: string
+          note?: string | null
+          occurred_at: string
+          source_ts?: string | null
+          to_account?: string | null
+          user_id: string
+        }
+        Update: {
+          account?: string
+          amount?: number
+          created_at?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          occurred_at?: string
+          source_ts?: string | null
+          to_account?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      spend_categories: {
+        Row: {
+          emoji: string
+          key: string
+          kind: string
+          label: string
+          sort: number
+          user_id: string
+        }
+        Insert: {
+          emoji?: string
+          key: string
+          kind?: string
+          label: string
+          sort?: number
+          user_id: string
+        }
+        Update: {
+          emoji?: string
+          key?: string
+          kind?: string
+          label?: string
+          sort?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      spend_month_plans: {
+        Row: {
+          buffer: number
+          category_budgets: Json
+          created_at: string
+          food_budget: number
+          investments: number
+          month: string
+          salary: number
+          savings_target: number
+          transport_budget: number
+          user_id: string
+          week_weights: Json
+        }
+        Insert: {
+          buffer?: number
+          category_budgets?: Json
+          created_at?: string
+          food_budget?: number
+          investments?: number
+          month: string
+          salary?: number
+          savings_target?: number
+          transport_budget?: number
+          user_id: string
+          week_weights?: Json
+        }
+        Update: {
+          buffer?: number
+          category_budgets?: Json
+          created_at?: string
+          food_budget?: number
+          investments?: number
+          month?: string
+          salary?: number
+          savings_target?: number
+          transport_budget?: number
+          user_id?: string
+          week_weights?: Json
+        }
+        Relationships: []
+      }
+      wait_list: {
+        Row: {
+          added_at: string
+          category: string
+          created_at: string
+          decided_at: string | null
+          decision: string
+          id: string
+          item: string
+          price: number
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          category: string
+          created_at?: string
+          decided_at?: string | null
+          decision?: string
+          id?: string
+          item: string
+          price: number
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          category?: string
+          created_at?: string
+          decided_at?: string | null
+          decision?: string
+          id?: string
+          item?: string
+          price?: number
           user_id?: string
         }
         Relationships: []
@@ -265,6 +427,7 @@ export type Database = {
     }
     Functions: {
       seed_default_sports: { Args: { target: string }; Returns: undefined }
+      seed_default_spend_categories: { Args: { target: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

@@ -46,3 +46,6 @@ client_secret_*.json
 
 # supabase cli scratch
 supabase/.temp/
+
+# personal transaction exports — contain real financial data
+*.csv
