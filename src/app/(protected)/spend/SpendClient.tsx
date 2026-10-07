@@ -16,13 +16,22 @@ import {
   addExpense,
   deleteExpense,
   setWeeklyBudget,
-  type ExpenseCategory,
 } from "./actions";
+
+export type SpendCategory = {
+  key: string;
+  label: string;
+  emoji: string;
+  kind: string;
+  sort: number;
+  group: string | null;
+  subgroup: string | null;
+};
 
 export type Expense = {
   id: string;
   amount: number;
-  category: ExpenseCategory;
+  category: string;
   note: string | null;
   spent_on: string;
   created_at: string;
@@ -35,28 +44,7 @@ type Props = {
   budget: number;
   initialExpenses: Expense[];
   weekTotals: { mon: string; total: number }[];
-};
-
-const CATEGORY_ORDER: ExpenseCategory[] = [
-  "food",
-  "groc",
-  "travel",
-  "shop",
-  "bills",
-  "fun",
-  "health",
-  "other",
-];
-
-const CATEGORY_META: Record<ExpenseCategory, { emoji: string; label: string }> = {
-  food: { emoji: "🍛", label: "Food & eating out" },
-  groc: { emoji: "🛒", label: "Groceries" },
-  travel: { emoji: "🛵", label: "Transport" },
-  shop: { emoji: "🛍️", label: "Shopping" },
-  bills: { emoji: "📱", label: "Bills & subscriptions" },
-  fun: { emoji: "🎟️", label: "Going out & fun" },
-  health: { emoji: "💪", label: "Health & fitness" },
-  other: { emoji: "📦", label: "Other" },
+  categories: SpendCategory[];
 };
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -98,7 +86,15 @@ export function SpendClient({
   budget,
   initialExpenses,
   weekTotals,
+  categories,
 }: Props) {
+  // First 8 categories (by sort) become pills; the rest go in a "More" select.
+  const pillCats = categories.slice(0, 8);
+  const moreCats = categories.slice(8);
+
+  function catMeta(key: string) {
+    return categories.find((c) => c.key === key) ?? { emoji: "📦", label: key };
+  }
   const [expenses, applyOptimistic] = useOptimistic(initialExpenses, reduce);
   const [isPending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | null>(null);
@@ -114,7 +110,7 @@ export function SpendClient({
   // --- Log form state ---------------------------------------------------
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [category, setCategory] = useState<ExpenseCategory>("food");
+  const [category, setCategory] = useState<string>(categories[0]?.key ?? "");
   const [day, setDay] = useState(defaultDay);
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -206,10 +202,13 @@ export function SpendClient({
   const pacePct = Math.min(100, (pace / scale) * 100);
 
   // --- Category breakdown -----------------------------------------------
-  const categoryTotals = CATEGORY_ORDER.map((cat) => ({
-    cat,
-    total: expenses.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0),
-  }))
+  const categoryTotals = [...expenses
+    .reduce<Map<string, number>>((map, e) => {
+      map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
+      return map;
+    }, new Map())
+    .entries()]
+    .map(([cat, total]) => ({ cat, total }))
     .filter((c) => c.total > 0)
     .sort((a, b) => b.total - a.total);
 
@@ -401,28 +400,45 @@ export function SpendClient({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {CATEGORY_ORDER.map((cat) => {
-            const meta = CATEGORY_META[cat];
-            const selected = category === cat;
+          {pillCats.map((cat) => {
+            const selected = category === cat.key;
             return (
               <button
-                key={cat}
+                key={cat.key}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => setCategory(cat)}
+                onClick={() => setCategory(cat.key)}
                 className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                   selected ? "border-text bg-text text-bg" : "border-border text-text hover:border-accent"
                 }`}
               >
-                {meta.emoji} {meta.label}
+                {cat.emoji} {cat.label}
               </button>
             );
           })}
+          {moreCats.length > 0 && (
+            <select
+              value={moreCats.some((c) => c.key === category) ? category : ""}
+              onChange={(e) => { if (e.target.value) setCategory(e.target.value); }}
+              className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
+                moreCats.some((c) => c.key === category)
+                  ? "border-text bg-text text-bg"
+                  : "border-border bg-bg text-text hover:border-accent"
+              }`}
+            >
+              <option value="">More…</option>
+              {moreCats.map((cat) => (
+                <option key={cat.key} value={cat.key}>
+                  {cat.emoji} {cat.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <input
           type="text"
-          maxLength={80}
+          maxLength={300}
           placeholder="What was it? (optional)"
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -452,7 +468,7 @@ export function SpendClient({
         ) : (
           <div>
             {categoryTotals.map(({ cat, total }, i) => {
-              const meta = CATEGORY_META[cat];
+              const meta = catMeta(cat);
               const share = spent > 0 ? (total / spent) * 100 : 0;
               return (
                 <div
@@ -505,11 +521,11 @@ export function SpendClient({
                       className={`flex items-center justify-between gap-3 py-2.5 ${i > 0 ? "border-t border-border" : ""}`}
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
-                        <span>{CATEGORY_META[e.category].emoji}</span>
+                        <span>{catMeta(e.category).emoji}</span>
                         <div className="min-w-0">
-                          <p className="truncate text-text">{e.note || CATEGORY_META[e.category].label}</p>
+                          <p className="truncate text-text">{e.note || catMeta(e.category).label}</p>
                           {e.note ? (
-                            <p className="text-[0.82rem] text-text-muted">{CATEGORY_META[e.category].label}</p>
+                            <p className="text-[0.82rem] text-text-muted">{catMeta(e.category).label}</p>
                           ) : null}
                         </div>
                       </div>
@@ -517,7 +533,7 @@ export function SpendClient({
                         <span className="font-bold text-text">{money.format(e.amount)}</span>
                         <button
                           type="button"
-                          aria-label={`Delete ${e.note || CATEGORY_META[e.category].label}, ${money.format(e.amount)}`}
+                          aria-label={`Delete ${e.note || catMeta(e.category).label}, ${money.format(e.amount)}`}
                           onClick={() => handleDelete(e.id)}
                           className={`flex h-[34px] w-[34px] items-center justify-center rounded-full text-text-muted transition-colors hover:text-over ${focusRing}`}
                         >

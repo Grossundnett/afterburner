@@ -184,26 +184,32 @@ export type Database = {
       spend_categories: {
         Row: {
           emoji: string
+          group: string | null
           key: string
           kind: string
           label: string
           sort: number
+          subgroup: string | null
           user_id: string
         }
         Insert: {
           emoji?: string
+          group?: string | null
           key: string
           kind?: string
           label: string
           sort?: number
+          subgroup?: string | null
           user_id: string
         }
         Update: {
           emoji?: string
+          group?: string | null
           key?: string
           kind?: string
           label?: string
           sort?: number
+          subgroup?: string | null
           user_id?: string
         }
         Relationships: []

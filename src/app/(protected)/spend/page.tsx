@@ -1,7 +1,7 @@
 import { addDays, isIsoDate, todayIn, weekStart } from "@/lib/dates";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
-import { SpendClient, type Expense } from "./SpendClient";
+import { SpendClient, type Expense, type SpendCategory } from "./SpendClient";
 
 export default async function SpendPage({
   searchParams,
@@ -44,7 +44,7 @@ export default async function SpendPage({
   // rather than eight separate queries.
   const historyStart = addDays(weekMon, -49);
 
-  const [{ data: weekRows }, { data: settings }, { data: history }] =
+  const [{ data: weekRows }, { data: settings }, { data: history }, { data: catRows }] =
     await Promise.all([
       supabase
         .from("expenses")
@@ -64,6 +64,11 @@ export default async function SpendPage({
         .eq("user_id", userId)
         .gte("spent_on", historyStart)
         .lte("spent_on", weekSun),
+      supabase
+        .from("spend_categories")
+        .select("key, label, emoji, kind, sort, group, subgroup")
+        .eq("user_id", userId)
+        .order("sort", { ascending: true }),
     ]);
 
   const budget = settings?.weekly_budget ?? 5000;
@@ -80,10 +85,20 @@ export default async function SpendPage({
   const initialExpenses: Expense[] = (weekRows ?? []).map((row) => ({
     id: row.id,
     amount: Number(row.amount),
-    category: row.category as Expense["category"],
+    category: row.category,
     note: row.note,
     spent_on: row.spent_on,
     created_at: row.created_at,
+  }));
+
+  const categories: SpendCategory[] = (catRows ?? []).map((r) => ({
+    key: r.key,
+    label: r.label,
+    emoji: r.emoji,
+    kind: r.kind,
+    sort: r.sort,
+    group: r.group ?? null,
+    subgroup: r.subgroup ?? null,
   }));
 
   return (
@@ -96,6 +111,7 @@ export default async function SpendPage({
           budget={budget}
           initialExpenses={initialExpenses}
           weekTotals={weekTotals}
+          categories={categories}
         />
       </div>
     </main>

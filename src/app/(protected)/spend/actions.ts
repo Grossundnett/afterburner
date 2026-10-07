@@ -13,18 +13,8 @@ const UUID =
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-const CATEGORIES = [
-  "food",
-  "groc",
-  "travel",
-  "shop",
-  "bills",
-  "fun",
-  "health",
-  "other",
-] as const;
-
-export type ExpenseCategory = (typeof CATEGORIES)[number];
+/** Category keys are free text validated against the user's spend_categories. */
+export type ExpenseCategory = string;
 
 /** Called from a Client Component, so every action authenticates itself —
  * the proxy matcher protects pages, not the Server Actions mounted on them. */
@@ -50,11 +40,11 @@ const addExpenseSchema = z.object({
     .positive("Enter an amount above zero.")
     .max(10_000_000, "That amount is too large.")
     .transform((n) => Math.round(n * 100) / 100),
-  category: z.enum(CATEGORIES),
+  category: z.string().min(1, "Pick a category.").max(200),
   note: z
     .string()
     .trim()
-    .max(80, "Keep the note under 80 characters.")
+    .max(300, "Keep the note under 300 characters.")
     .nullable()
     .optional()
     .transform((v) => (v === undefined || v === "" ? null : v)),
@@ -69,6 +59,19 @@ export async function addExpense(input: AddExpenseInput) {
   const parsed = addExpenseSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "That spend could not be added." };
+  }
+
+  // Validate category against the user's spend_categories table.
+  // This catches any forged or stale key the client might send.
+  const { data: catRow } = await supabase
+    .from("spend_categories")
+    .select("key")
+    .eq("user_id", userId)
+    .eq("key", parsed.data.category)
+    .maybeSingle();
+
+  if (!catRow) {
+    return { error: "Pick a valid category." };
   }
 
   const { data: profile } = await supabase
