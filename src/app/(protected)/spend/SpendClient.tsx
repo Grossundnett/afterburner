@@ -287,13 +287,21 @@ export function SpendClient({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={openBudgetDialog}
-          className={`shrink-0 whitespace-nowrap text-[13px] text-text-muted underline underline-offset-4 hover:text-text ${focusRing}`}
-        >
-          Budget {money.format(budget)}/wk
-        </button>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={openBudgetDialog}
+            className={`whitespace-nowrap text-[13px] text-text-muted underline underline-offset-4 hover:text-text ${focusRing}`}
+          >
+            Budget {money.format(budget)}/wk
+          </button>
+          <Link
+            href="/spend/plan"
+            className={`whitespace-nowrap text-[13px] text-text-muted underline underline-offset-4 hover:text-text ${focusRing}`}
+          >
+            Month plan →
+          </Link>
+        </div>
       </div>
 
       {/* Hero */}
