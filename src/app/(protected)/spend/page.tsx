@@ -44,32 +44,53 @@ export default async function SpendPage({
   // rather than eight separate queries.
   const historyStart = addDays(weekMon, -49);
 
-  const [{ data: weekRows }, { data: settings }, { data: history }, { data: catRows }] =
-    await Promise.all([
-      supabase
-        .from("expenses")
-        .select("id, amount, category, note, spent_on, created_at")
-        .eq("user_id", userId)
-        .gte("spent_on", weekMon)
-        .lte("spent_on", weekSun)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("spend_settings")
-        .select("weekly_budget")
-        .eq("user_id", userId)
-        .maybeSingle(),
-      supabase
-        .from("expenses")
-        .select("spent_on, amount")
-        .eq("user_id", userId)
-        .gte("spent_on", historyStart)
-        .lte("spent_on", weekSun),
-      supabase
-        .from("spend_categories")
-        .select("key, label, emoji, kind, sort, group, subgroup")
-        .eq("user_id", userId)
-        .order("sort", { ascending: true }),
-    ]);
+  // First day of the month containing today — used for the monthly view.
+  const monthStart = `${today.slice(0, 7)}-01`;
+
+  const [
+    { data: weekRows },
+    { data: settings },
+    { data: history },
+    { data: catRows },
+    { data: monthRows },
+    { data: monthPlanRow },
+  ] = await Promise.all([
+    supabase
+      .from("expenses")
+      .select("id, amount, category, note, spent_on, created_at")
+      .eq("user_id", userId)
+      .gte("spent_on", weekMon)
+      .lte("spent_on", weekSun)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("spend_settings")
+      .select("weekly_budget")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("expenses")
+      .select("spent_on, amount")
+      .eq("user_id", userId)
+      .gte("spent_on", historyStart)
+      .lte("spent_on", weekSun),
+    supabase
+      .from("spend_categories")
+      .select("key, label, emoji, kind, sort, group, subgroup")
+      .eq("user_id", userId)
+      .order("sort", { ascending: true }),
+    supabase
+      .from("expenses")
+      .select("category, amount")
+      .eq("user_id", userId)
+      .gte("spent_on", monthStart)
+      .lte("spent_on", today),
+    supabase
+      .from("spend_month_plans")
+      .select("category_budgets")
+      .eq("user_id", userId)
+      .eq("month", today.slice(0, 7))
+      .maybeSingle(),
+  ]);
 
   const budget = settings?.weekly_budget ?? 5000;
 
@@ -112,6 +133,17 @@ export default async function SpendPage({
           initialExpenses={initialExpenses}
           weekTotals={weekTotals}
           categories={categories}
+          monthlyData={(monthRows ?? []).map((r) => ({
+            category: r.category,
+            amount: Number(r.amount),
+          }))}
+          monthPlanBudgets={
+            (monthPlanRow?.category_budgets != null &&
+            typeof monthPlanRow.category_budgets === "object" &&
+            !Array.isArray(monthPlanRow.category_budgets)
+              ? (monthPlanRow.category_budgets as Record<string, number>)
+              : {})
+          }
         />
       </div>
     </main>

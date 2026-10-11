@@ -45,6 +45,8 @@ type Props = {
   initialExpenses: Expense[];
   weekTotals: { mon: string; total: number }[];
   categories: SpendCategory[];
+  monthlyData: { category: string; amount: number }[];
+  monthPlanBudgets: Record<string, number>;
 };
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -87,6 +89,8 @@ export function SpendClient({
   initialExpenses,
   weekTotals,
   categories,
+  monthlyData,
+  monthPlanBudgets,
 }: Props) {
   // First 8 categories (by sort) become pills; the rest go in a "More" select.
   const pillCats = categories.slice(0, 8);
@@ -211,6 +215,71 @@ export function SpendClient({
     .map(([cat, total]) => ({ cat, total }))
     .filter((c) => c.total > 0)
     .sort((a, b) => b.total - a.total);
+
+  // --- Monthly view ---------------------------------------------------------
+  // Groups that have either spending or a budget in the current month.
+  // Subgroup rows (Dating, Guilty pleasure, Clothes) appear indented for
+  // groups that define a subgroup structure.
+  const groupsForMonth = useMemo(() => {
+    // Category totals for the current month
+    const byKey = new Map<string, number>();
+    for (const r of monthlyData) {
+      byKey.set(r.category, (byKey.get(r.category) ?? 0) + r.amount);
+    }
+
+    // Group totals
+    const byGroup = new Map<string, number>();
+    for (const [key, amt] of byKey) {
+      const group = categories.find((c) => c.key === key)?.group;
+      if (group) byGroup.set(group, (byGroup.get(group) ?? 0) + amt);
+    }
+
+    // Groups that have any category with an explicit subgroup → show subrows
+    const groupsWithSubs = new Set(
+      categories.filter((c) => c.subgroup).map((c) => c.group).filter(Boolean) as string[],
+    );
+
+    // Subrow entries (one per category in a group-with-subs that has spending)
+    const subsByGroup = new Map<string, { key: string; emoji: string; label: string; subgroup: string | null; total: number }[]>();
+    for (const cat of categories) {
+      if (!cat.group || !groupsWithSubs.has(cat.group)) continue;
+      const total = byKey.get(cat.key) ?? 0;
+      if (total === 0) continue;
+      const list = subsByGroup.get(cat.group) ?? [];
+      list.push({ key: cat.key, emoji: cat.emoji, label: cat.label, subgroup: cat.subgroup, total });
+      subsByGroup.set(cat.group, list);
+    }
+
+    // Build the group representative (prefer category with no subgroup)
+    const repByGroup = new Map<string, SpendCategory>();
+    for (const cat of categories) {
+      if (!cat.group) continue;
+      const existing = repByGroup.get(cat.group);
+      if (!existing || cat.subgroup === null) repByGroup.set(cat.group, cat);
+    }
+
+    const result = [];
+    for (const [group, rep] of repByGroup) {
+      const total = byGroup.get(group) ?? 0;
+      const planBudget = monthPlanBudgets[group] ?? 0;
+      if (total === 0 && planBudget === 0) continue;
+      result.push({
+        group,
+        emoji: rep.emoji,
+        kind: rep.kind,
+        total,
+        budget: planBudget,
+        subs: subsByGroup.get(group) ?? [],
+      });
+    }
+    return result.sort((a, b) => b.total - a.total);
+  }, [categories, monthlyData, monthPlanBudgets]);
+
+  const [todayY, todayM] = today.split("-").map(Number);
+  const monthName = new Date(Date.UTC(todayY, todayM - 1, 1)).toLocaleDateString("en-IN", {
+    month: "long",
+    timeZone: "UTC",
+  });
 
   // --- Grouped list ---------------------------------------------------------
   const byDay = new Map<string, Expense[]>();
@@ -592,6 +661,68 @@ export function SpendClient({
           })}
         </div>
       </div>
+
+      {/* This month */}
+      {groupsForMonth.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h2 className="font-spend-display text-[1.15rem] font-bold text-text">
+            This month · {monthName}
+          </h2>
+
+          <div>
+            {groupsForMonth.map(({ group, emoji, kind, total, budget: groupBudget, subs }, i) => {
+              const isOver = groupBudget > 0 && total > groupBudget;
+              const pct = groupBudget > 0 ? Math.min(100, (total / groupBudget) * 100) : 0;
+              return (
+                <div
+                  key={group}
+                  className={`flex flex-col gap-2 py-3 ${i > 0 ? "border-t border-border" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 text-text">
+                      <span>{emoji}</span>
+                      <span>{group}</span>
+                      {kind === "weekly" && (
+                        <span className="rounded bg-border px-1.5 py-0.5 text-[0.72rem] text-text-muted">
+                          weekly
+                        </span>
+                      )}
+                    </span>
+                    <span className={`font-bold tabular-nums ${isOver ? "text-over" : "text-text"}`}>
+                      {groupBudget > 0
+                        ? `${money.format(total)} / ${money.format(groupBudget)}`
+                        : money.format(total)}
+                    </span>
+                  </div>
+
+                  {groupBudget > 0 && (
+                    <div className="h-[5px] overflow-hidden rounded-full bg-border">
+                      <div
+                        className={`h-full rounded-full ${isOver ? "bg-over" : "bg-accent"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
+
+                  {subs.length > 0 && (
+                    <div className="ml-6 flex flex-col gap-1">
+                      {subs.map((s) => (
+                        <div key={s.key} className="flex items-center justify-between text-[0.88rem]">
+                          <span className="flex items-center gap-1.5 text-text-muted">
+                            <span>{s.emoji}</span>
+                            <span>{s.label}</span>
+                          </span>
+                          <span className="tabular-nums text-text">{money.format(s.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Budget dialog */}
       <dialog
