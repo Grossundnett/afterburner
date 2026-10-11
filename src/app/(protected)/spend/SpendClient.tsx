@@ -724,6 +724,14 @@ export function SpendClient({
         </div>
       )}
 
+      {/* Import link */}
+      <Link
+        href="/spend/import"
+        className={`self-start text-[0.88rem] text-text-muted underline underline-offset-4 hover:text-text ${focusRing}`}
+      >
+        Import from Wallet CSV →
+      </Link>
+
       {/* Budget dialog */}
       <dialog
         ref={dialogRef}
