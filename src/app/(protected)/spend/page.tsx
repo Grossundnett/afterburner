@@ -100,7 +100,25 @@ export default async function SpendPage({
       .lte("spent_on", currentWeekSun),
   ]);
 
-  const budget = settings?.weekly_budget ?? 5000;
+  // Hero weekly budget: when a plan exists, it's (Food + Travel per-week) ×
+  // Mom's-rule multiplier for the current week of the month. Without a plan,
+  // fall back to the hand-set weekly budget on spend_settings — the dialog
+  // is gone but the setting stays as the empty-plan fallback.
+  const planBudgets =
+    monthPlanRow?.category_budgets != null &&
+    typeof monthPlanRow.category_budgets === "object" &&
+    !Array.isArray(monthPlanRow.category_budgets)
+      ? (monthPlanRow.category_budgets as Record<string, number>)
+      : {};
+  const dayOfMonth = Number(today.slice(8, 10));
+  const weekOfMonth = Math.min(4, Math.max(1, Math.ceil(dayOfMonth / 7)));
+  const momMultiplier = weekOfMonth <= 2 ? 0.8 : 1.2;
+  const planWeekly =
+    ((planBudgets["Food"] ?? 0) + (planBudgets["Travel"] ?? 0)) * momMultiplier;
+  const budget =
+    monthPlanRow && planWeekly > 0
+      ? Math.round(planWeekly)
+      : settings?.weekly_budget ?? 5000;
 
   const weekTotals = Array.from({ length: 8 }, (_, i) => {
     const mon = addDays(weekMon, -(7 - i) * 7);

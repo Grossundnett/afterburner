@@ -17,6 +17,7 @@ type Props = {
   savings_target: number;
   buffer: number;
   category_budgets: Record<string, number>;
+  weeklyGroups: PlanGroup[];
   monthlyGroups: PlanGroup[];
 };
 
@@ -65,6 +66,7 @@ export function PlanClient({
   savings_target: initSavings,
   buffer: initBuffer,
   category_budgets: initBudgets,
+  weeklyGroups,
   monthlyGroups,
 }: Props) {
   const [isPending, startTransition] = useTransition();
@@ -77,7 +79,7 @@ export function PlanClient({
   const [buffer, setBuffer] = useState(initBuffer > 0 ? String(initBuffer) : "");
   const [groupBudgets, setGroupBudgets] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    for (const g of monthlyGroups) {
+    for (const g of [...weeklyGroups, ...monthlyGroups]) {
       const v = initBudgets[g.group];
       init[g.group] = v && v > 0 ? String(v) : "";
     }
@@ -85,9 +87,11 @@ export function PlanClient({
   });
 
   const n = (v: string) => Number(v) || 0;
+  const sumWeeklyPerWeek = weeklyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
+  const sumWeeklyMonthly = sumWeeklyPerWeek * 4;
   const sumMonthly = monthlyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
-  const totalOut = n(investments) + n(savingsTarget) + n(buffer) + sumMonthly;
-  const available = n(salary) - totalOut;
+  const totalOut = n(investments) + n(savingsTarget) + n(buffer) + sumMonthly + sumWeeklyMonthly;
+  const unallocated = n(salary) - totalOut;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -95,7 +99,7 @@ export function PlanClient({
     setSaved(false);
 
     const categoryBudgets: Record<string, number> = {};
-    for (const g of monthlyGroups) {
+    for (const g of [...weeklyGroups, ...monthlyGroups]) {
       const v = n(groupBudgets[g.group] ?? "");
       if (v > 0) categoryBudgets[g.group] = v;
     }
@@ -140,6 +144,22 @@ export function PlanClient({
         <NumInput label="Buffer" value={buffer} onChange={setBuffer} />
       </div>
 
+      {/* Weekly budgets (per week — reset every Monday) */}
+      <div className={fieldRow}>
+        <h2 className="font-spend-display font-bold text-text">Weekly budgets</h2>
+        <p className="text-[0.88rem] text-text-muted">
+          Per week. The spend page applies Mom&apos;s rule: 0.8× in weeks 1-2, 1.2× in weeks 3+.
+        </p>
+        {weeklyGroups.map((g) => (
+          <NumInput
+            key={g.group}
+            label={`${g.emoji} ${g.label}`}
+            value={groupBudgets[g.group] ?? ""}
+            onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
+          />
+        ))}
+      </div>
+
       {/* Monthly category budgets */}
       <div className={fieldRow}>
         <h2 className="font-spend-display font-bold text-text">Monthly budgets</h2>
@@ -180,13 +200,17 @@ export function PlanClient({
             <span>− Monthly budgets</span>
             <span>{money.format(sumMonthly)}</span>
           </div>
+          <div className="flex justify-between text-text-muted">
+            <span>− Weekly budgets × 4</span>
+            <span>{money.format(sumWeeklyMonthly)}</span>
+          </div>
           <div
             className={`mt-1 flex justify-between border-t border-border pt-2 font-bold ${
-              available < 0 ? "text-over" : "text-text"
+              unallocated < 0 ? "text-over" : "text-text"
             }`}
           >
-            <span>Available for weekly spend</span>
-            <span>{money.format(available)}</span>
+            <span>Unallocated</span>
+            <span>{money.format(unallocated)}</span>
           </div>
         </div>
       </div>

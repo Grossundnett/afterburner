@@ -131,33 +131,3 @@ export async function deleteExpense(id: string) {
   revalidatePath("/spend");
 }
 
-const setWeeklyBudgetSchema = z.object({
-  amount: z.coerce
-    .number()
-    .int("Budget must be a whole number of rupees.")
-    .positive("Budget must be above zero."),
-});
-
-export async function setWeeklyBudget(amount: number) {
-  const { supabase, userId } = await requireUser();
-
-  const parsed = setWeeklyBudgetSchema.safeParse({ amount });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Budget not saved." };
-  }
-
-  const { error } = await supabase.from("spend_settings").upsert(
-    {
-      user_id: userId,
-      weekly_budget: parsed.data.amount,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
-
-  if (error) {
-    return { error: `Budget not saved. ${error.message}` };
-  }
-
-  revalidatePath("/spend");
-}

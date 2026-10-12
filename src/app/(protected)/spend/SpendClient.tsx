@@ -18,7 +18,6 @@ import { groupDisplay } from "@/lib/spend-groups";
 import {
   addExpense,
   deleteExpense,
-  setWeeklyBudget,
 } from "./actions";
 
 export type SpendCategory = {
@@ -451,22 +450,12 @@ export function SpendClient({
     othersBreakdown.sort((a, b) => b.total - a.total);
 
     // --- WEEKLY SIDE ---------------------------------------------------------
-    // Mom's rule: pool = salary − investments − savings − buffer − monthly budgets.
-    // Average weekly = pool / 4. Weeks 1-2 of the month get 0.8×, weeks 3+ get 1.2×.
-    const monthlyBudgetSum = Object.entries(budgets)
-      .filter(([k]) => k !== "Food" && k !== "Travel")
-      .reduce((s, [, v]) => s + (v ?? 0), 0);
-    const weeklyPool = Math.max(
-      0,
-      monthPlan.salary -
-        monthPlan.investments -
-        monthPlan.savings_target -
-        monthPlan.buffer -
-        monthlyBudgetSum,
-    );
-    const avgWeek = weeklyPool / 4;
+    // Each weekly group has its own per-week budget on the plan. Mom's rule
+    // scales this week's allowance by 0.8× in weeks 1-2 of the month, 1.2×
+    // from week 3 onward, so bars read tighter at the start of the month and
+    // looser later — matching how spending feels.
     const weekOfMonth = Math.min(4, Math.max(1, Math.ceil(dayOfMonth / 7)));
-    const weeklyAllowance = Math.round(avgWeek * (weekOfMonth <= 2 ? 0.8 : 1.2));
+    const momMultiplier = weekOfMonth <= 2 ? 0.8 : 1.2;
 
     const weekByKey = new Map<string, number>();
     for (const r of currentWeekData) {
@@ -474,9 +463,12 @@ export function SpendClient({
     }
 
     const weeklyRows: typeof monthlyRows = [];
+    let anyWeeklyBudget = false;
     for (const groupName of ["Food", "Travel"]) {
       const rep = repByGroup.get(groupName);
       if (!rep) continue;
+      const perWeek = budgets[groupName] ?? 0;
+      if (perWeek > 0) anyWeeklyBudget = true;
       const groupTotal = categories
         .filter((c) => c.group === groupName)
         .reduce((s, c) => s + (weekByKey.get(c.key) ?? 0), 0);
@@ -485,7 +477,7 @@ export function SpendClient({
         display: groupName,
         emoji: rep.emoji,
         total: groupTotal,
-        budget: weeklyAllowance,
+        budget: Math.round(perWeek * momMultiplier),
       });
     }
     weeklyRows.sort((a, b) => {
@@ -498,7 +490,7 @@ export function SpendClient({
       monthlyAll,
       othersBreakdown,
       weeklyRows,
-      weeklyAllowance,
+      anyWeeklyBudget,
       weekOfMonth,
     };
   }, [monthPlan, categories, monthlyData, currentWeekData, dayOfMonth]);
@@ -516,34 +508,6 @@ export function SpendClient({
   const prevWeekHref = `/spend?week=${addDays(weekMon, -7)}`;
   const nextWeekHref = isCurrentWeek ? null : `/spend?week=${addDays(weekMon, 7)}`;
   const weekName = isCurrentWeek ? "This week" : isLastWeek ? "Last week" : `Week of ${dmon(weekMon)}`;
-
-  // --- Budget dialog ----------------------------------------------------
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const [budgetInput, setBudgetInput] = useState(String(budget));
-  const [budgetError, setBudgetError] = useState<string | null>(null);
-
-  function openBudgetDialog() {
-    setBudgetInput(String(budget));
-    setBudgetError(null);
-    dialogRef.current?.showModal();
-  }
-
-  function handleSaveBudget(e: FormEvent) {
-    e.preventDefault();
-    const amt = Math.round(Number(budgetInput));
-    if (!budgetInput || !(amt > 0)) {
-      setBudgetError("Enter an amount above zero.");
-      return;
-    }
-    startTransition(async () => {
-      const result = await setWeeklyBudget(amt);
-      if (result?.error) {
-        setBudgetError(result.error);
-        return;
-      }
-      dialogRef.current?.close();
-    });
-  }
 
   const navBtn =
     `flex h-[38px] w-[38px] items-center justify-center rounded-full border-[1.5px] border-border text-lg text-text transition-colors hover:border-accent ${focusRing}`;
@@ -578,21 +542,12 @@ export function SpendClient({
           )}
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <button
-            type="button"
-            onClick={openBudgetDialog}
-            className={`whitespace-nowrap text-[13px] text-text-muted underline underline-offset-4 hover:text-text ${focusRing}`}
-          >
-            Budget {money.format(budget)}/wk
-          </button>
-          <Link
-            href="/spend/plan"
-            className={`whitespace-nowrap text-[13px] text-text-muted underline underline-offset-4 hover:text-text ${focusRing}`}
-          >
-            Month plan →
-          </Link>
-        </div>
+        <Link
+          href="/spend/plan"
+          className={`shrink-0 whitespace-nowrap text-[13px] text-text-muted underline underline-offset-4 hover:text-text ${focusRing}`}
+        >
+          Month plan →
+        </Link>
       </div>
 
       {/* Hero */}
@@ -687,9 +642,9 @@ export function SpendClient({
             <p className="text-[0.78rem] uppercase tracking-wider text-text-muted">
               this week
             </p>
-            {status.weeklyAllowance === 0 ? (
+            {!status.anyWeeklyBudget ? (
               <p className="text-[0.85rem] text-text-muted">
-                Weekly allowance is zero — monthly budgets consume the whole pool.
+                No weekly budgets set — add Food and Travel on the month plan.
               </p>
             ) : (
               status.weeklyRows.map((row) => (
@@ -939,51 +894,6 @@ export function SpendClient({
         Import from Wallet CSV →
       </Link>
 
-      {/* Budget dialog */}
-      <dialog
-        ref={dialogRef}
-        className={`m-auto w-[calc(100%-32px)] max-w-[340px] rounded-2xl border-[1.5px] border-border bg-surface p-5 text-text backdrop:bg-black/50`}
-      >
-        <form onSubmit={handleSaveBudget} className="flex flex-col gap-3">
-          <h2 className="font-spend-display text-[1.15rem] font-bold">
-            Weekly budget
-          </h2>
-          <p className="text-[0.9rem] text-text-muted">The most you want to spend Monday to Sunday.</p>
-
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold text-text-muted">
-              ₹
-            </span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={budgetInput}
-              onChange={(e) => setBudgetInput(e.target.value)}
-              className={`w-full rounded-lg border-[1.5px] border-border bg-bg py-3 pl-8 pr-3 text-[16px] text-text focus:border-accent ${focusRing}`}
-            />
-          </div>
-
-          {budgetError ? <p className="text-[0.88rem] text-over">{budgetError}</p> : null}
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => dialogRef.current?.close()}
-              className={`flex-1 rounded-[10px] border-[1.5px] border-border py-3 text-text ${focusRing}`}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              aria-disabled={isPending}
-              className={`flex-1 rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
-              onClick={(e) => { if (isPending) e.preventDefault(); }}
-            >
-              {isPending ? "Saving…" : "Save budget"}
-            </button>
-          </div>
-        </form>
-      </dialog>
     </div>
   );
 }

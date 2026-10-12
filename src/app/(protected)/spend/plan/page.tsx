@@ -47,31 +47,34 @@ export default async function PlanPage() {
       .from("spend_categories")
       .select("key, label, emoji, kind, sort, group, subgroup")
       .eq("user_id", userId)
-      .eq("kind", "monthly")
       .order("sort", { ascending: true }),
   ]);
 
-  // One row per group. The row's display name IS the group name (via
-  // groupDisplay for the two cosmetic renames); the emoji comes from the
-  // self-named singleton category (key === group) when one exists, else the
-  // first category in sort order. Row order follows the first-seen category.
-  const groupMap = new Map<string, PlanGroup>();
-  for (const cat of catRows ?? []) {
-    if (!cat.group) continue;
-    const existing = groupMap.get(cat.group);
-    const emojiIsSingleton = cat.key === cat.group;
-    if (!existing) {
-      groupMap.set(cat.group, {
-        group: cat.group,
-        emoji: cat.emoji,
-        label: groupDisplay(cat.group),
-      });
-    } else if (emojiIsSingleton) {
-      // Prefer the self-named category's emoji over whichever one landed first.
-      existing.emoji = cat.emoji;
+  // One row per group, built per kind separately so Food/Travel surface on
+  // the weekly card and the rest on the monthly card. The row's display name
+  // IS the group name (via groupDisplay for the two cosmetic renames); emoji
+  // comes from the self-named singleton (key === group) when one exists,
+  // else the first category in sort order. Row order follows first-seen.
+  function buildGroups(kind: "weekly" | "monthly"): PlanGroup[] {
+    const map = new Map<string, PlanGroup>();
+    for (const cat of catRows ?? []) {
+      if (!cat.group || cat.kind !== kind) continue;
+      const existing = map.get(cat.group);
+      if (!existing) {
+        map.set(cat.group, {
+          group: cat.group,
+          emoji: cat.emoji,
+          label: groupDisplay(cat.group),
+        });
+      } else if (cat.key === cat.group) {
+        existing.emoji = cat.emoji;
+      }
     }
+    return [...map.values()];
   }
-  const monthlyGroups: PlanGroup[] = [...groupMap.values()];
+
+  const weeklyGroups = buildGroups("weekly");
+  const monthlyGroups = buildGroups("monthly");
 
   const storedBudgets =
     plan?.category_budgets != null && typeof plan.category_budgets === "object"
@@ -96,6 +99,7 @@ export default async function PlanPage() {
           savings_target={Number(plan?.savings_target ?? 0)}
           buffer={Number(plan?.buffer ?? 0)}
           category_budgets={storedBudgets}
+          weeklyGroups={weeklyGroups}
           monthlyGroups={monthlyGroups}
         />
       </div>
