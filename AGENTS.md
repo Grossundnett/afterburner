@@ -57,6 +57,9 @@ project shipping.
   Confusing the two either rejects a legitimate entry or silently discards a
   meaningful one.
 - Mobile-first. I will use this on my phone more than my laptop.
+- Always `git push` after committing at the end of a session. Vercel deploys
+  from GitHub — an unpushed commit is invisible: the live site stays stale and
+  any URL I test returns a 404 or old behaviour.
 
 ## Stack
 
