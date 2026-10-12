@@ -144,7 +144,7 @@ export function PlanClient({
       <div className={fieldRow}>
         <h2 className="font-spend-display font-bold text-text">Monthly budgets</h2>
         <p className="text-[0.88rem] text-text-muted">
-          Subgroups (Dating, Guilty pleasure, Clothes) share their group's budget.
+          Any group left blank rolls into Others on the spend page.
         </p>
         {monthlyGroups.map((g) => (
           <NumInput

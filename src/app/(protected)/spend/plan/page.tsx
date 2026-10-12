@@ -1,5 +1,6 @@
 import { createClient, getClaims } from "@/lib/supabase/server";
 import { todayIn } from "@/lib/dates";
+import { groupDisplay } from "@/lib/spend-groups";
 import Link from "next/link";
 import { PlanClient, type PlanGroup } from "./PlanClient";
 
@@ -50,17 +51,24 @@ export default async function PlanPage() {
       .order("sort", { ascending: true }),
   ]);
 
-  // One representative per group: prefer the category with no subgroup.
+  // One row per group. The row's display name IS the group name (via
+  // groupDisplay for the two cosmetic renames); the emoji comes from the
+  // self-named singleton category (key === group) when one exists, else the
+  // first category in sort order. Row order follows the first-seen category.
   const groupMap = new Map<string, PlanGroup>();
   for (const cat of catRows ?? []) {
     if (!cat.group) continue;
     const existing = groupMap.get(cat.group);
-    if (!existing || cat.subgroup === null) {
+    const emojiIsSingleton = cat.key === cat.group;
+    if (!existing) {
       groupMap.set(cat.group, {
         group: cat.group,
         emoji: cat.emoji,
-        label: cat.label,
+        label: groupDisplay(cat.group),
       });
+    } else if (emojiIsSingleton) {
+      // Prefer the self-named category's emoji over whichever one landed first.
+      existing.emoji = cat.emoji;
     }
   }
   const monthlyGroups: PlanGroup[] = [...groupMap.values()];

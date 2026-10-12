@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import { addDays, daysBetween } from "@/lib/dates";
+import { groupDisplay } from "@/lib/spend-groups";
 
 import {
   addExpense,
@@ -60,13 +61,6 @@ type Props = {
   monthPlan: MonthPlan | null;
   dayOfMonth: number;
 };
-
-// Groups whose spend-row displays a prettier name than its stored key.
-const GROUP_DISPLAY: Record<string, string> = {
-  "Charity, gifts": "Charity & gifts",
-  "Energy, utilities": "Energy & utilities",
-};
-const groupDisplay = (name: string) => GROUP_DISPLAY[name] ?? name;
 
 // Overflow caps at +50% past the budget mark, so one blown bar can't make the
 // others unreadable. The real rupee figure next to it carries the magnitude.
