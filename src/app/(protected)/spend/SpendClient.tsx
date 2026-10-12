@@ -7,7 +7,9 @@ import {
   useRef,
   useState,
   useTransition,
+  type ElementType,
   type FormEvent,
+  type ReactNode,
 } from "react";
 
 import { addDays, daysBetween } from "@/lib/dates";
@@ -37,6 +39,14 @@ export type Expense = {
   created_at: string;
 };
 
+export type MonthPlan = {
+  salary: number;
+  investments: number;
+  savings_target: number;
+  buffer: number;
+  category_budgets: Record<string, number>;
+};
+
 type Props = {
   weekMon: string;
   currentWeekMon: string;
@@ -46,8 +56,22 @@ type Props = {
   weekTotals: { mon: string; total: number }[];
   categories: SpendCategory[];
   monthlyData: { category: string; amount: number }[];
-  monthPlanBudgets: Record<string, number>;
+  currentWeekData: { category: string; amount: number }[];
+  monthPlan: MonthPlan | null;
+  dayOfMonth: number;
 };
+
+// Groups whose spend-row displays a prettier name than its stored key.
+const GROUP_DISPLAY: Record<string, string> = {
+  "Charity, gifts": "Charity & gifts",
+  "Energy, utilities": "Energy & utilities",
+};
+const groupDisplay = (name: string) => GROUP_DISPLAY[name] ?? name;
+
+// Overflow caps at +50% past the budget mark, so one blown bar can't make the
+// others unreadable. The real rupee figure next to it carries the magnitude.
+const BAR_SCALE = 1.5;
+const BUDGET_MARK_PCT = (100 / BAR_SCALE); // 66.67%
 
 const money = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -81,6 +105,111 @@ function reduce(state: Expense[], action: OptimisticAction): Expense[] {
   return state.filter((e) => e.id !== action.id);
 }
 
+/** Progress bar for one budget. 100% budget sits at BUDGET_MARK_PCT (66.67%)
+ * of the track; the overflow lane past it is distinctly coloured and capped
+ * at +50% of budget — the real rupee figure above carries the magnitude. */
+function BudgetBar({
+  display,
+  emoji,
+  total,
+  budget,
+  expandable,
+  expanded,
+  onToggle,
+  children,
+}: {
+  display: string;
+  emoji: string;
+  total: number;
+  budget: number;
+  expandable?: boolean;
+  expanded?: boolean;
+  onToggle?: () => void;
+  children?: ReactNode;
+}) {
+  const pct = budget > 0 ? (total / budget) * 100 : 0;
+  const isOver = pct > 100;
+  const basePct = Math.min(100, pct) / BAR_SCALE; // 0 → 66.67%
+  const overflowPct = isOver ? Math.min(50, pct - 100) / BAR_SCALE : 0; // 0 → 33.33%
+  const delta = Math.abs(budget - total);
+  const sideLabel =
+    budget === 0 ? "no budget" : isOver ? `${money.format(delta)} over` : `${money.format(delta)} left`;
+
+  // The whole row is a button when expandable so the hit area reaches the
+  // sides — tapping only the chevron on a phone is a precision ask.
+  const Wrapper: ElementType = expandable ? "button" : "div";
+  const wrapperProps = expandable
+    ? {
+        type: "button" as const,
+        onClick: onToggle,
+        "aria-expanded": expanded,
+        className:
+          "flex flex-col gap-1.5 text-left outline-none focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-signal",
+      }
+    : { className: "flex flex-col gap-1.5" };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Wrapper {...wrapperProps}>
+        <div className="flex items-center justify-between gap-2 text-[0.92rem]">
+          <span className="flex items-center gap-1.5 text-text">
+            <span>{emoji}</span>
+            <span>{display}</span>
+            {expandable && (
+              <span className="text-text-muted" aria-hidden="true">
+                {expanded ? "▾" : "▸"}
+              </span>
+            )}
+          </span>
+          <span
+            className={`font-bold tabular-nums ${isOver ? "text-over" : "text-text"}`}
+          >
+            {budget > 0
+              ? `${money.format(total)} / ${money.format(budget)}`
+              : money.format(total)}
+          </span>
+        </div>
+
+        {budget > 0 ? (
+          <div className="relative h-[8px] w-full rounded-full bg-border">
+            {/* base fill up to the budget mark */}
+            <div
+              className="bar-fill absolute inset-y-0 left-0 rounded-full bg-accent"
+              style={{ width: `${basePct}%` }}
+            />
+            {/* overflow segment past the budget mark, capped at +50% */}
+            {isOver && (
+              <div
+                className="bar-fill absolute inset-y-0 flex items-center justify-end overflow-hidden rounded-r-full bg-over pr-1 text-[9px] leading-none text-accent-ink"
+                style={{
+                  left: `${BUDGET_MARK_PCT}%`,
+                  width: `${overflowPct}%`,
+                  animationDelay: "180ms",
+                }}
+              >
+                <span aria-hidden="true">⚡</span>
+              </div>
+            )}
+            {/* budget mark line */}
+            <div
+              className="pointer-events-none absolute top-[-3px] bottom-[-3px] w-px bg-text/35"
+              style={{ left: `${BUDGET_MARK_PCT}%` }}
+              aria-hidden="true"
+            />
+          </div>
+        ) : (
+          <div className="h-[8px] w-full rounded-full bg-border/50" />
+        )}
+
+        <p className={`text-[0.78rem] ${isOver ? "text-over" : "text-text-muted"}`}>
+          {sideLabel}
+        </p>
+      </Wrapper>
+      {children}
+    </div>
+  );
+}
+
 export function SpendClient({
   weekMon,
   currentWeekMon,
@@ -90,7 +219,9 @@ export function SpendClient({
   weekTotals,
   categories,
   monthlyData,
-  monthPlanBudgets,
+  currentWeekData,
+  monthPlan,
+  dayOfMonth,
 }: Props) {
   // First 8 categories (by sort) become pills; the rest go in a "More" select.
   const pillCats = categories.slice(0, 8);
@@ -198,13 +329,6 @@ export function SpendClient({
     sublineTail = "You stayed under. Nice.";
   }
 
-  // --- Day strip ------------------------------------------------------------
-  const dayTotals = days.map((d) => expenses.filter((e) => e.spent_on === d).reduce((s, e) => s + e.amount, 0));
-  const pace = budget / 7;
-  const maxDay = Math.max(...dayTotals, 0);
-  const scale = Math.max(pace * 1.6, maxDay, 1);
-  const pacePct = Math.min(100, (pace / scale) * 100);
-
   // --- Category breakdown -----------------------------------------------
   const categoryTotals = [...expenses
     .reduce<Map<string, number>>((map, e) => {
@@ -216,41 +340,26 @@ export function SpendClient({
     .filter((c) => c.total > 0)
     .sort((a, b) => b.total - a.total);
 
-  // --- Monthly view ---------------------------------------------------------
-  // Groups that have either spending or a budget in the current month.
-  // Subgroup rows (Dating, Guilty pleasure, Clothes) appear indented for
-  // groups that define a subgroup structure.
-  const groupsForMonth = useMemo(() => {
-    // Category totals for the current month
-    const byKey = new Map<string, number>();
-    for (const r of monthlyData) {
-      byKey.set(r.category, (byKey.get(r.category) ?? 0) + r.amount);
-    }
+  // --- Status block ---------------------------------------------------------
+  // Two columns: monthly groups (left) with per-group budgets from the plan,
+  // weekly groups (right) sharing the Mom's-rule weekly allowance as denominator.
+  // Any category whose group has no budget rolls into Others — clicking the
+  // Others row expands it to show which categories landed there.
+  const [othersOpen, setOthersOpen] = useState(false);
 
-    // Group totals
-    const byGroup = new Map<string, number>();
-    for (const [key, amt] of byKey) {
-      const group = categories.find((c) => c.key === key)?.group;
-      if (group) byGroup.set(group, (byGroup.get(group) ?? 0) + amt);
-    }
+  const [todayY, todayM] = today.split("-").map(Number);
+  const monthName = new Date(Date.UTC(todayY, todayM - 1, 1)).toLocaleDateString("en-IN", {
+    month: "long",
+    timeZone: "UTC",
+  });
 
-    // Groups that have any category with an explicit subgroup → show subrows
-    const groupsWithSubs = new Set(
-      categories.filter((c) => c.subgroup).map((c) => c.group).filter(Boolean) as string[],
-    );
+  const status = useMemo(() => {
+    if (!monthPlan) return null;
 
-    // Subrow entries (one per category in a group-with-subs that has spending)
-    const subsByGroup = new Map<string, { key: string; emoji: string; label: string; subgroup: string | null; total: number }[]>();
-    for (const cat of categories) {
-      if (!cat.group || !groupsWithSubs.has(cat.group)) continue;
-      const total = byKey.get(cat.key) ?? 0;
-      if (total === 0) continue;
-      const list = subsByGroup.get(cat.group) ?? [];
-      list.push({ key: cat.key, emoji: cat.emoji, label: cat.label, subgroup: cat.subgroup, total });
-      subsByGroup.set(cat.group, list);
-    }
+    const budgets = monthPlan.category_budgets ?? {};
 
-    // Build the group representative (prefer category with no subgroup)
+    // Representative category per group (preferring one with no subgroup) for
+    // the row's emoji; order follows the first representative's sort.
     const repByGroup = new Map<string, SpendCategory>();
     for (const cat of categories) {
       if (!cat.group) continue;
@@ -258,28 +367,147 @@ export function SpendClient({
       if (!existing || cat.subgroup === null) repByGroup.set(cat.group, cat);
     }
 
-    const result = [];
+    // --- MONTHLY SIDE --------------------------------------------------------
+    const monthByKey = new Map<string, number>();
+    for (const r of monthlyData) {
+      monthByKey.set(r.category, (monthByKey.get(r.category) ?? 0) + r.amount);
+    }
+
+    // A group counts as "budgeted" only when the plan gives it > 0. Everything
+    // else — including monthly categories whose group has no plan entry —
+    // folds into Others. (Weekly groups are handled on the other side and
+    // never flow into Others.)
+    const budgetedGroups = new Set(
+      Object.entries(budgets)
+        .filter(([, v]) => (v ?? 0) > 0)
+        .map(([k]) => k),
+    );
+
+    const monthlyRows: {
+      group: string;
+      display: string;
+      emoji: string;
+      total: number;
+      budget: number;
+    }[] = [];
+    let othersTotal = 0;
+    const othersBreakdown: { label: string; emoji: string; total: number }[] = [];
+
     for (const [group, rep] of repByGroup) {
-      const total = byGroup.get(group) ?? 0;
-      const planBudget = monthPlanBudgets[group] ?? 0;
-      if (total === 0 && planBudget === 0) continue;
-      result.push({
-        group,
+      if (rep.kind !== "monthly") continue;
+      if (group === "Others") continue;
+      const groupTotal = categories
+        .filter((c) => c.group === group)
+        .reduce((s, c) => s + (monthByKey.get(c.key) ?? 0), 0);
+
+      if (budgetedGroups.has(group)) {
+        monthlyRows.push({
+          group,
+          display: groupDisplay(group),
+          emoji: rep.emoji,
+          total: groupTotal,
+          budget: budgets[group] ?? 0,
+        });
+      } else {
+        // Unbudgeted group — its spend rolls into Others.
+        othersTotal += groupTotal;
+        if (groupTotal > 0) {
+          othersBreakdown.push({
+            label: groupDisplay(group),
+            emoji: rep.emoji,
+            total: groupTotal,
+          });
+        }
+      }
+    }
+
+    // Also fold Others' own categories (keys whose group IS 'Others') in.
+    const othersRep = repByGroup.get("Others");
+    if (othersRep) {
+      for (const cat of categories.filter((c) => c.group === "Others")) {
+        const amt = monthByKey.get(cat.key) ?? 0;
+        othersTotal += amt;
+        if (amt > 0) {
+          othersBreakdown.push({ label: cat.label, emoji: cat.emoji, total: amt });
+        }
+      }
+    }
+
+    const othersBudget = budgets["Others"] ?? 0;
+
+    // Sort by percent used descending — the thing closest to blowing comes first.
+    monthlyRows.sort((a, b) => {
+      const ap = a.budget > 0 ? a.total / a.budget : 0;
+      const bp = b.budget > 0 ? b.total / b.budget : 0;
+      return bp - ap;
+    });
+
+    // Others always rendered last so the expand doesn't shuffle sibling order.
+    const monthlyAll = [
+      ...monthlyRows,
+      {
+        group: "Others",
+        display: "Others",
+        emoji: othersRep?.emoji ?? "📦",
+        total: othersTotal,
+        budget: othersBudget,
+      },
+    ];
+
+    othersBreakdown.sort((a, b) => b.total - a.total);
+
+    // --- WEEKLY SIDE ---------------------------------------------------------
+    // Mom's rule: pool = salary − investments − savings − buffer − monthly budgets.
+    // Average weekly = pool / 4. Weeks 1-2 of the month get 0.8×, weeks 3+ get 1.2×.
+    const monthlyBudgetSum = Object.entries(budgets)
+      .filter(([k]) => k !== "Food" && k !== "Travel")
+      .reduce((s, [, v]) => s + (v ?? 0), 0);
+    const weeklyPool = Math.max(
+      0,
+      monthPlan.salary -
+        monthPlan.investments -
+        monthPlan.savings_target -
+        monthPlan.buffer -
+        monthlyBudgetSum,
+    );
+    const avgWeek = weeklyPool / 4;
+    const weekOfMonth = Math.min(4, Math.max(1, Math.ceil(dayOfMonth / 7)));
+    const weeklyAllowance = Math.round(avgWeek * (weekOfMonth <= 2 ? 0.8 : 1.2));
+
+    const weekByKey = new Map<string, number>();
+    for (const r of currentWeekData) {
+      weekByKey.set(r.category, (weekByKey.get(r.category) ?? 0) + r.amount);
+    }
+
+    const weeklyRows: typeof monthlyRows = [];
+    for (const groupName of ["Food", "Travel"]) {
+      const rep = repByGroup.get(groupName);
+      if (!rep) continue;
+      const groupTotal = categories
+        .filter((c) => c.group === groupName)
+        .reduce((s, c) => s + (weekByKey.get(c.key) ?? 0), 0);
+      weeklyRows.push({
+        group: groupName,
+        display: groupName,
         emoji: rep.emoji,
-        kind: rep.kind,
-        total,
-        budget: planBudget,
-        subs: subsByGroup.get(group) ?? [],
+        total: groupTotal,
+        budget: weeklyAllowance,
       });
     }
-    return result.sort((a, b) => b.total - a.total);
-  }, [categories, monthlyData, monthPlanBudgets]);
+    weeklyRows.sort((a, b) => {
+      const ap = a.budget > 0 ? a.total / a.budget : 0;
+      const bp = b.budget > 0 ? b.total / b.budget : 0;
+      return bp - ap;
+    });
 
-  const [todayY, todayM] = today.split("-").map(Number);
-  const monthName = new Date(Date.UTC(todayY, todayM - 1, 1)).toLocaleDateString("en-IN", {
-    month: "long",
-    timeZone: "UTC",
-  });
+    return {
+      monthlyAll,
+      othersBreakdown,
+      weeklyRows,
+      weeklyAllowance,
+      weekOfMonth,
+    };
+  }, [monthPlan, categories, monthlyData, currentWeekData, dayOfMonth]);
 
   // --- Grouped list ---------------------------------------------------------
   const byDay = new Map<string, Expense[]>();
@@ -399,44 +627,90 @@ export function SpendClient({
           />
         </div>
 
-        <div className="mt-[22px] grid grid-cols-7 gap-2 max-[420px]:gap-[5px]">
-          {days.map((d, i) => {
-            const total = dayTotals[i];
-            const isToday = d === today;
-            const barOver = total > pace;
-            const barPct = Math.min(100, (total / scale) * 100);
-
-            return (
-              <div key={d} className="flex flex-col items-center gap-1">
-                <p className="h-[1em] text-center text-[0.78rem] text-text max-[420px]:text-[0.7rem]">
-                  {total > 0 ? money.format(total) : " "}
-                </p>
-                <div
-                  className={`relative w-full rounded-lg bg-border/45 [--col-h:120px] max-[420px]:[--col-h:96px] ${
-                    isToday ? "outline outline-2 -outline-offset-2 outline-signal" : ""
-                  }`}
-                  style={{ height: "var(--col-h)" }}
-                >
-                  <div
-                    className={`absolute inset-x-0 bottom-0 rounded-t-lg transition-[height] duration-[400ms] ${
-                      barOver ? "bg-over" : "bg-accent"
-                    }`}
-                    style={{ height: `calc(var(--col-h) * ${barPct / 100})` }}
-                  />
-                  <div
-                    className="absolute inset-x-0 border-t-2 border-dashed border-text/45"
-                    style={{ bottom: `calc(var(--col-h) * ${pacePct / 100})` }}
-                  />
-                </div>
-                <p className={`text-[0.8rem] ${isToday ? "font-bold text-text" : "text-text-muted"}`}>
-                  {weekdayShort(d)}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-2 text-[0.82rem] text-text-muted">Dashed line is your even daily pace.</p>
       </div>
+
+      {/* Status block — where you stand this month and this week.
+          Monthly groups left, weekly groups right, sorted by % used. */}
+      {status === null ? (
+        <div className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-border bg-surface p-4">
+          <h2 className="font-spend-display text-[1.1rem] font-bold text-text">
+            No budget set for {monthName}
+          </h2>
+          <p className="text-[0.9rem] text-text-muted">
+            Set a plan to see where you stand per group.
+          </p>
+          <Link
+            href="/spend/plan"
+            className={`self-start text-[0.9rem] font-bold text-accent underline underline-offset-4 ${focusRing}`}
+          >
+            Set the {monthName} plan →
+          </Link>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="flex flex-col gap-3">
+            <p className="text-[0.78rem] uppercase tracking-wider text-text-muted">
+              this month
+            </p>
+            {status.monthlyAll.map((row) => (
+              <BudgetBar
+                key={row.group}
+                display={row.display}
+                emoji={row.emoji}
+                total={row.total}
+                budget={row.budget}
+                expandable={row.group === "Others"}
+                expanded={row.group === "Others" && othersOpen}
+                onToggle={row.group === "Others" ? () => setOthersOpen((v) => !v) : undefined}
+              >
+                {row.group === "Others" && othersOpen && (
+                  <div className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-3">
+                    {status.othersBreakdown.length === 0 ? (
+                      <p className="text-[0.82rem] text-text-muted">Nothing in Others this month.</p>
+                    ) : (
+                      status.othersBreakdown.map((o) => (
+                        <div
+                          key={o.label}
+                          className="flex items-center justify-between text-[0.85rem]"
+                        >
+                          <span className="flex items-center gap-1.5 text-text">
+                            <span>{o.emoji}</span>
+                            <span>{o.label}</span>
+                          </span>
+                          <span className="tabular-nums text-text">
+                            {money.format(o.total)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </BudgetBar>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <p className="text-[0.78rem] uppercase tracking-wider text-text-muted">
+              this week
+            </p>
+            {status.weeklyAllowance === 0 ? (
+              <p className="text-[0.85rem] text-text-muted">
+                Weekly allowance is zero — monthly budgets consume the whole pool.
+              </p>
+            ) : (
+              status.weeklyRows.map((row) => (
+                <BudgetBar
+                  key={row.group}
+                  display={row.display}
+                  emoji={row.emoji}
+                  total={row.total}
+                  budget={row.budget}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Log card */}
       <form
@@ -662,67 +936,6 @@ export function SpendClient({
         </div>
       </div>
 
-      {/* This month */}
-      {groupsForMonth.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h2 className="font-spend-display text-[1.15rem] font-bold text-text">
-            This month · {monthName}
-          </h2>
-
-          <div>
-            {groupsForMonth.map(({ group, emoji, kind, total, budget: groupBudget, subs }, i) => {
-              const isOver = groupBudget > 0 && total > groupBudget;
-              const pct = groupBudget > 0 ? Math.min(100, (total / groupBudget) * 100) : 0;
-              return (
-                <div
-                  key={group}
-                  className={`flex flex-col gap-2 py-3 ${i > 0 ? "border-t border-border" : ""}`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="flex items-center gap-2 text-text">
-                      <span>{emoji}</span>
-                      <span>{group}</span>
-                      {kind === "weekly" && (
-                        <span className="rounded bg-border px-1.5 py-0.5 text-[0.72rem] text-text-muted">
-                          weekly
-                        </span>
-                      )}
-                    </span>
-                    <span className={`font-bold tabular-nums ${isOver ? "text-over" : "text-text"}`}>
-                      {groupBudget > 0
-                        ? `${money.format(total)} / ${money.format(groupBudget)}`
-                        : money.format(total)}
-                    </span>
-                  </div>
-
-                  {groupBudget > 0 && (
-                    <div className="h-[5px] overflow-hidden rounded-full bg-border">
-                      <div
-                        className={`h-full rounded-full ${isOver ? "bg-over" : "bg-accent"}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  )}
-
-                  {subs.length > 0 && (
-                    <div className="ml-6 flex flex-col gap-1">
-                      {subs.map((s) => (
-                        <div key={s.key} className="flex items-center justify-between text-[0.88rem]">
-                          <span className="flex items-center gap-1.5 text-text-muted">
-                            <span>{s.emoji}</span>
-                            <span>{s.label}</span>
-                          </span>
-                          <span className="tabular-nums text-text">{money.format(s.total)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Import link */}
       <Link

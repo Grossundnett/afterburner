@@ -38,6 +38,7 @@ export default async function SpendPage({
   const weekMon = weekStart(isIsoDate(params.week) ? params.week : today);
   const weekSun = addDays(weekMon, 6);
   const currentWeekMon = weekStart(today);
+  const currentWeekSun = addDays(currentWeekMon, 6);
 
   // 8 weeks ending at the selected week, in one range query grouped in code —
   // the week-by-week totals below are derived from this single result set
@@ -54,6 +55,7 @@ export default async function SpendPage({
     { data: catRows },
     { data: monthRows },
     { data: monthPlanRow },
+    { data: currentWeekRows },
   ] = await Promise.all([
     supabase
       .from("expenses")
@@ -86,10 +88,16 @@ export default async function SpendPage({
       .lte("spent_on", today),
     supabase
       .from("spend_month_plans")
-      .select("category_budgets")
+      .select("salary, investments, savings_target, buffer, category_budgets")
       .eq("user_id", userId)
       .eq("month", today.slice(0, 7))
       .maybeSingle(),
+    supabase
+      .from("expenses")
+      .select("category, amount")
+      .eq("user_id", userId)
+      .gte("spent_on", currentWeekMon)
+      .lte("spent_on", currentWeekSun),
   ]);
 
   const budget = settings?.weekly_budget ?? 5000;
@@ -137,13 +145,27 @@ export default async function SpendPage({
             category: r.category,
             amount: Number(r.amount),
           }))}
-          monthPlanBudgets={
-            (monthPlanRow?.category_budgets != null &&
-            typeof monthPlanRow.category_budgets === "object" &&
-            !Array.isArray(monthPlanRow.category_budgets)
-              ? (monthPlanRow.category_budgets as Record<string, number>)
-              : {})
+          currentWeekData={(currentWeekRows ?? []).map((r) => ({
+            category: r.category,
+            amount: Number(r.amount),
+          }))}
+          monthPlan={
+            monthPlanRow
+              ? {
+                  salary: Number(monthPlanRow.salary ?? 0),
+                  investments: Number(monthPlanRow.investments ?? 0),
+                  savings_target: Number(monthPlanRow.savings_target ?? 0),
+                  buffer: Number(monthPlanRow.buffer ?? 0),
+                  category_budgets:
+                    monthPlanRow.category_budgets != null &&
+                    typeof monthPlanRow.category_budgets === "object" &&
+                    !Array.isArray(monthPlanRow.category_budgets)
+                      ? (monthPlanRow.category_budgets as Record<string, number>)
+                      : {},
+                }
+              : null
           }
+          dayOfMonth={Number(today.slice(8, 10))}
         />
       </div>
     </main>

@@ -22,7 +22,7 @@ const C = {
 // Exception patterns — applied to note + payee, expenses only, before key lookup.
 // Priority: guilty > dating > category lookup.
 // ---------------------------------------------------------------------------
-const GUILTY_RE = /don'?t ask|succumb/i;
+const GUILTY_RE = /don'?t ask|succumb|gu?ilty pleasure/i;
 const DATING_RE = /\b(dating|hinge|bumble|tinder|boo|aisle|pure)\b/i;
 
 // ---------------------------------------------------------------------------
@@ -343,7 +343,6 @@ export async function commitImport(
   }
 
   // 2. Partition expenses into new vs. existing (CSV wins on conflict)
-  const csvKeys = new Set(expenses.map((e) => `${e.source_ts}|${e.account}`));
   const { data: existingRows } = await supabase
     .from("expenses")
     .select("source_ts, account")
