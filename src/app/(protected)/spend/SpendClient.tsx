@@ -73,6 +73,7 @@ type Props = {
 };
 
 const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
+const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
 
 // Overflow caps at +50% past the budget mark, so one blown bar can't make the
 // others unreadable. The real rupee figure next to it carries the magnitude.
@@ -244,6 +245,7 @@ export function SpendClient({
   const [note, setNote] = useState("");
   const [category, setCategory] = useState<string>(categories[0]?.key ?? "");
   const [day, setDay] = useState(defaultDay);
+  const [account, setAccount] = useState<(typeof ACCOUNTS)[number]>("Apex");
   const amountRef = useRef<HTMLInputElement>(null);
 
   const [trackedWeekMon, setTrackedWeekMon] = useState(weekMon);
@@ -279,6 +281,7 @@ export function SpendClient({
         category,
         note: trimmedNote || null,
         spentOn: day,
+        account,
       });
 
       if (result?.error) {
@@ -587,6 +590,19 @@ export function SpendClient({
             {days.map((d) => (
               <option key={d} value={d} disabled={d > today}>
                 {d === today ? "Today" : `${weekdayShort(d)} ${dmon(d)}`}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={account}
+            onChange={(e) => setAccount(e.target.value as (typeof ACCOUNTS)[number])}
+            aria-label="Account"
+            className={`rounded-lg border-[1.5px] border-border bg-bg px-3 text-[16px] text-text ${focusRing}`}
+          >
+            {ACCOUNTS.map((a) => (
+              <option key={a} value={a}>
+                {a}
               </option>
             ))}
           </select>

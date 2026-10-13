@@ -31,6 +31,8 @@ async function requireUser() {
   return { supabase, userId };
 }
 
+const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
+
 const addExpenseSchema = z.object({
   // Rounded to 2 decimals to match the numeric(10,2) column; a client-side
   // float like 12.345 would otherwise be silently truncated by Postgres
@@ -49,6 +51,9 @@ const addExpenseSchema = z.object({
     .optional()
     .transform((v) => (v === undefined || v === "" ? null : v)),
   spentOn: z.string().regex(DATE, "Pick a valid date."),
+  // Which account the money came from, for balance drawdown. Defaults to
+  // Apex (the DB column default too) so existing callers keep working.
+  account: z.enum(ACCOUNTS).optional().default("Apex"),
 });
 
 export type AddExpenseInput = z.input<typeof addExpenseSchema>;
@@ -94,6 +99,7 @@ export async function addExpense(input: AddExpenseInput) {
     category: parsed.data.category,
     note: parsed.data.note,
     spent_on: parsed.data.spentOn,
+    account: parsed.data.account,
   });
 
   if (error) {
@@ -136,14 +142,16 @@ const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"
 const coverOverspendSchema = z.object({
   from: z.enum(BUCKETS),
   to: z.enum(BUCKETS),
-  amount: z.coerce.number().positive(),
+  amount: z.coerce.number().positive().max(10_000_000),
 });
 
-/** "This week's move" — shifts budget between two buckets on the current
- * cycle's plan, YNAB-style. Edits the stored per-week (weekly kind) or
- * per-month (monthly kind) figure directly; there's no separate "available"
- * ledger here, so moving money permanently reduces the donor's template
- * budget rather than borrowing from cash left over this period only. */
+/** "This week's move" — shifts budget between two buckets for the CURRENT
+ * cycle only, via spend_month_plans.adjustments, never category_budgets.
+ * category_budgets is the reusable template a future "copy last month"
+ * would carry forward; if Cover edited it directly, every use would ratchet
+ * the template down permanently. adjustments is a one-off delta layered on
+ * top for this cycle's row only — get_dashboard adds it to the template
+ * figure, and a new month's row starts with adjustments back at '{}'. */
 export async function coverOverspend(input: {
   from: string;
   to: string;
@@ -169,7 +177,7 @@ export async function coverOverspend(input: {
 
   const { data: plan } = await supabase
     .from("spend_month_plans")
-    .select("category_budgets")
+    .select("adjustments")
     .eq("user_id", userId)
     .eq("month", month)
     .maybeSingle();
@@ -178,17 +186,20 @@ export async function coverOverspend(input: {
     return { error: "No plan for this cycle yet." };
   }
 
-  const budgets = { ...(plan.category_budgets as Record<string, number>) };
-  const fromBudget = budgets[parsed.data.from] ?? 0;
-  const toBudget = budgets[parsed.data.to] ?? 0;
-  const moved = Math.min(parsed.data.amount, fromBudget);
+  const adjustments = { ...(plan.adjustments as Record<string, number>) };
+  const fromAdj = adjustments[parsed.data.from] ?? 0;
+  const toAdj = adjustments[parsed.data.to] ?? 0;
+  const moved = parsed.data.amount;
 
-  budgets[parsed.data.from] = Math.round((fromBudget - moved) * 100) / 100;
-  budgets[parsed.data.to] = Math.round((toBudget + moved) * 100) / 100;
+  // Decrease the donor's adjustment (can go negative — same as YNAB letting
+  // a category go negative when you move out more than it has) and increase
+  // the receiver's by the same amount, so the move is a wash on the cycle.
+  adjustments[parsed.data.from] = Math.round((fromAdj - moved) * 100) / 100;
+  adjustments[parsed.data.to] = Math.round((toAdj + moved) * 100) / 100;
 
   const { error } = await supabase
     .from("spend_month_plans")
-    .update({ category_budgets: budgets })
+    .update({ adjustments })
     .eq("user_id", userId)
     .eq("month", month);
 

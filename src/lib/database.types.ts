@@ -216,6 +216,7 @@ export type Database = {
       }
       spend_month_plans: {
         Row: {
+          adjustments: Json
           buffer: number
           category_budgets: Json
           created_at: string
@@ -229,6 +230,7 @@ export type Database = {
           week_weights: Json
         }
         Insert: {
+          adjustments?: Json
           buffer?: number
           category_budgets?: Json
           created_at?: string
@@ -242,6 +244,7 @@ export type Database = {
           week_weights?: Json
         }
         Update: {
+          adjustments?: Json
           buffer?: number
           category_budgets?: Json
           created_at?: string
