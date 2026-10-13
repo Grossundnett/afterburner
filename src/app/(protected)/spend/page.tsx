@@ -1,7 +1,7 @@
 import { addDays, isIsoDate, todayIn, weekStart } from "@/lib/dates";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
-import { SpendClient, type Expense, type SpendCategory } from "./SpendClient";
+import { SpendClient, type Dashboard, type Expense, type SpendCategory } from "./SpendClient";
 
 export default async function SpendPage({
   searchParams,
@@ -34,91 +34,41 @@ export default async function SpendPage({
 
   // Normalised to the containing week's Monday regardless of what the URL
   // holds, so a missing param, a hand-edited non-Monday date, or a stale link
-  // all land on a real week rather than a half-week slice.
+  // all land on a real week rather than a half-week slice. This drives only
+  // the collapsed browse-history section below the fold — the hero, move
+  // card and category bars above it always reflect today's own cycle/week,
+  // computed server-side by get_dashboard regardless of which week is browsed.
   const weekMon = weekStart(isIsoDate(params.week) ? params.week : today);
   const weekSun = addDays(weekMon, 6);
   const currentWeekMon = weekStart(today);
-  const currentWeekSun = addDays(currentWeekMon, 6);
 
   // 8 weeks ending at the selected week, in one range query grouped in code —
   // the week-by-week totals below are derived from this single result set
   // rather than eight separate queries.
   const historyStart = addDays(weekMon, -49);
 
-  // First day of the month containing today — used for the monthly view.
-  const monthStart = `${today.slice(0, 7)}-01`;
-
-  const [
-    { data: weekRows },
-    { data: settings },
-    { data: history },
-    { data: catRows },
-    { data: monthRows },
-    { data: monthPlanRow },
-    { data: currentWeekRows },
-  ] = await Promise.all([
-    supabase
-      .from("expenses")
-      .select("id, amount, category, note, spent_on, created_at")
-      .eq("user_id", userId)
-      .gte("spent_on", weekMon)
-      .lte("spent_on", weekSun)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("spend_settings")
-      .select("weekly_budget")
-      .eq("user_id", userId)
-      .maybeSingle(),
-    supabase
-      .from("expenses")
-      .select("spent_on, amount")
-      .eq("user_id", userId)
-      .gte("spent_on", historyStart)
-      .lte("spent_on", weekSun),
-    supabase
-      .from("spend_categories")
-      .select("key, label, emoji, kind, sort, group, subgroup")
-      .eq("user_id", userId)
-      .order("sort", { ascending: true }),
-    supabase
-      .from("expenses")
-      .select("category, amount")
-      .eq("user_id", userId)
-      .gte("spent_on", monthStart)
-      .lte("spent_on", today),
-    supabase
-      .from("spend_month_plans")
-      .select("salary, investments, savings_target, buffer, category_budgets")
-      .eq("user_id", userId)
-      .eq("month", today.slice(0, 7))
-      .maybeSingle(),
-    supabase
-      .from("expenses")
-      .select("category, amount")
-      .eq("user_id", userId)
-      .gte("spent_on", currentWeekMon)
-      .lte("spent_on", currentWeekSun),
-  ]);
-
-  // Hero weekly budget: when a plan exists, it's (Food + Travel per-week) ×
-  // Mom's-rule multiplier for the current week of the month. Without a plan,
-  // fall back to the hand-set weekly budget on spend_settings — the dialog
-  // is gone but the setting stays as the empty-plan fallback.
-  const planBudgets =
-    monthPlanRow?.category_budgets != null &&
-    typeof monthPlanRow.category_budgets === "object" &&
-    !Array.isArray(monthPlanRow.category_budgets)
-      ? (monthPlanRow.category_budgets as Record<string, number>)
-      : {};
-  const dayOfMonth = Number(today.slice(8, 10));
-  const weekOfMonth = Math.min(4, Math.max(1, Math.ceil(dayOfMonth / 7)));
-  const momMultiplier = weekOfMonth <= 2 ? 0.8 : 1.2;
-  const planWeekly =
-    ((planBudgets["Food"] ?? 0) + (planBudgets["Travel"] ?? 0)) * momMultiplier;
-  const budget =
-    monthPlanRow && planWeekly > 0
-      ? Math.round(planWeekly)
-      : settings?.weekly_budget ?? 5000;
+  const [{ data: dashboard }, { data: weekRows }, { data: history }, { data: catRows }] =
+    await Promise.all([
+      supabase.rpc("get_dashboard", { p_today: today }),
+      supabase
+        .from("expenses")
+        .select("id, amount, category, note, spent_on, created_at")
+        .eq("user_id", userId)
+        .gte("spent_on", weekMon)
+        .lte("spent_on", weekSun)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("expenses")
+        .select("spent_on, amount")
+        .eq("user_id", userId)
+        .gte("spent_on", historyStart)
+        .lte("spent_on", weekSun),
+      supabase
+        .from("spend_categories")
+        .select("key, label, emoji, kind, sort, group, subgroup")
+        .eq("user_id", userId)
+        .order("sort", { ascending: true }),
+    ]);
 
   const weekTotals = Array.from({ length: 8 }, (_, i) => {
     const mon = addDays(weekMon, -(7 - i) * 7);
@@ -150,40 +100,15 @@ export default async function SpendPage({
 
   return (
     <main data-spend className="flex flex-1 justify-center">
-      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-[18px] pt-5 pb-16 [padding-bottom:calc(64px+env(safe-area-inset-bottom))]">
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-[18px] pt-5 pb-20 [padding-bottom:calc(72px+env(safe-area-inset-bottom))]">
         <SpendClient
           weekMon={weekMon}
           currentWeekMon={currentWeekMon}
           today={today}
-          budget={budget}
           initialExpenses={initialExpenses}
           weekTotals={weekTotals}
           categories={categories}
-          monthlyData={(monthRows ?? []).map((r) => ({
-            category: r.category,
-            amount: Number(r.amount),
-          }))}
-          currentWeekData={(currentWeekRows ?? []).map((r) => ({
-            category: r.category,
-            amount: Number(r.amount),
-          }))}
-          monthPlan={
-            monthPlanRow
-              ? {
-                  salary: Number(monthPlanRow.salary ?? 0),
-                  investments: Number(monthPlanRow.investments ?? 0),
-                  savings_target: Number(monthPlanRow.savings_target ?? 0),
-                  buffer: Number(monthPlanRow.buffer ?? 0),
-                  category_budgets:
-                    monthPlanRow.category_budgets != null &&
-                    typeof monthPlanRow.category_budgets === "object" &&
-                    !Array.isArray(monthPlanRow.category_budgets)
-                      ? (monthPlanRow.category_budgets as Record<string, number>)
-                      : {},
-                }
-              : null
-          }
-          dayOfMonth={Number(today.slice(8, 10))}
+          dashboard={dashboard as Dashboard}
         />
       </div>
     </main>
