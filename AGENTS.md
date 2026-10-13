@@ -64,6 +64,12 @@ project shipping.
 - Always `git push` after committing at the end of a session. Vercel deploys
   from GitHub — an unpushed commit is invisible: the live site stays stale and
   any URL I test returns a 404 or old behaviour.
+- Any rupee input must parse through a comma-stripping helper (`parseMoney`
+  in `src/lib/money.ts`), never a bare `Number()`. I type salary and account
+  balances with Indian comma grouping (`1,00,505`); `Number()` returns `NaN`
+  on that, and `|| 0` fallbacks turn the NaN into a silent, convincing-looking
+  zero rather than a visible error — a save that looks like it worked but
+  didn't.
 
 ## Stack
 
