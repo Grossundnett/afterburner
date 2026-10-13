@@ -344,24 +344,46 @@ export function SpendClient({
   // with the most room. Omitted entirely when nothing is over — an
   // encouraging message with no number attached is exactly what the
   // research brief rules out, and "nothing to move" has no number to show.
+  //
+  // Food and Transport are never donors — they're essentials, not slack to
+  // raid. And Cover is only offered when a single eligible donor's own room
+  // fully resolves the overspend; the UI moves from one bucket at a time,
+  // so proposing a move that leaves the bucket still over is worse than no
+  // suggestion. When nothing qualifies, say so with the number rather than
+  // silently going quiet or pretending a partial cover would help.
+  const ESSENTIAL_BUCKETS = new Set(["Food", "Transport"]);
   const mover = useMemo(() => {
     if (!dashboard.has_plan) return null;
     const overs = bucketRows.filter((r) => r.over > 0);
     if (overs.length === 0) return null;
     const worst = overs[0];
     const donors = bucketRows
-      .filter((r) => r.bucket !== worst.bucket && r.budget - r.total > 0)
+      .filter(
+        (r) =>
+          r.bucket !== worst.bucket &&
+          !ESSENTIAL_BUCKETS.has(r.bucket) &&
+          r.budget - r.total > 0,
+      )
       .sort((a, b) => (b.budget - b.total) - (a.budget - a.total));
-    if (donors.length === 0) return null;
-    const donor = donors[0];
-    const donorRoom = donor.budget - donor.total;
-    const moveAmt = Math.round(Math.min(worst.over, donorRoom));
-    if (moveAmt <= 0) return null;
-    return { worst, donor, donorRoom, moveAmt };
+
+    const bestDonor = donors[0];
+    const bestRoom = bestDonor ? bestDonor.budget - bestDonor.total : 0;
+
+    if (!bestDonor || bestRoom < worst.over) {
+      return { worst, tooLarge: true as const };
+    }
+
+    return {
+      worst,
+      tooLarge: false as const,
+      donor: bestDonor,
+      donorRoom: bestRoom,
+      moveAmt: Math.round(worst.over),
+    };
   }, [dashboard, bucketRows]);
 
   function handleCover() {
-    if (!mover) return;
+    if (!mover || mover.tooLarge) return;
     setMoveError(null);
     startTransition(async () => {
       const result = await coverOverspend({
@@ -459,19 +481,28 @@ export function SpendClient({
       {/* This week's move */}
       {dashboard.has_plan && mover && !moveDone && (
         <div className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-signal/50 bg-surface p-4">
-          <p className="text-text">
-            <strong>{mover.worst.bucket}</strong> is {money.format(mover.worst.over)} over. Cover it from{" "}
-            <strong>{mover.donor.bucket}</strong> ({money.format(mover.donorRoom)} left)?
-          </p>
-          {moveError ? <p className="text-[0.85rem] text-over">{moveError}</p> : null}
-          <button
-            type="button"
-            aria-disabled={isPending}
-            onClick={handleCover}
-            className={`self-start rounded-[10px] bg-accent px-4 py-2 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
-          >
-            Cover {money.format(mover.moveAmt)}
-          </button>
+          {mover.tooLarge ? (
+            <p className="text-text">
+              <strong>{mover.worst.bucket}</strong> is {money.format(mover.worst.over)} over — too big to
+              cover this month. It&apos;s carried as month debt.
+            </p>
+          ) : (
+            <>
+              <p className="text-text">
+                <strong>{mover.worst.bucket}</strong> is {money.format(mover.worst.over)} over. Cover it
+                from <strong>{mover.donor.bucket}</strong> ({money.format(mover.donorRoom)} left)?
+              </p>
+              {moveError ? <p className="text-[0.85rem] text-over">{moveError}</p> : null}
+              <button
+                type="button"
+                aria-disabled={isPending}
+                onClick={handleCover}
+                className={`self-start rounded-[10px] bg-accent px-4 py-2 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+              >
+                Cover {money.format(mover.moveAmt)}
+              </button>
+            </>
+          )}
         </div>
       )}
       {moveDone && (
