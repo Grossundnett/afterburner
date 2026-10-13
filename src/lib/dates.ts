@@ -119,6 +119,25 @@ export function weekStart(iso: string): string {
   return mon.toISOString().slice(0, 10);
 }
 
+/**
+ * The YYYY-MM plan this date's payday cycle is governed by. Payday is the
+ * last calendar day of the month; the cycle runs from a payday to the day
+ * before the next one. Every day in a cycle falls in the calendar month
+ * right after cycle_start — except cycle_start itself, which IS a month's
+ * last day and so reads as that month unless corrected here. Must match
+ * get_dashboard()'s SQL exactly, or the plan page and the RPC disagree about
+ * which month's budget governs today.
+ */
+export function cycleMonth(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const lastOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day === lastOfMonth) {
+    const next = new Date(Date.UTC(year, month, 1));
+    return next.toISOString().slice(0, 7);
+  }
+  return iso.slice(0, 7);
+}
+
 /** Hours and fractional minutes from a HH:MM or HH:MM:SS string. */
 export function clockToHours(clock: string): number {
   const [h, m] = clock.split(":").map(Number);

@@ -54,3 +54,51 @@ export async function saveMonthPlan(
     return { error: `Plan not saved. ${error.message}` };
   }
 }
+
+const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
+
+const recordBalanceSchema = z.object({
+  account: z.enum(ACCOUNTS),
+  amount: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
+});
+
+export type RecordBalanceInput = z.input<typeof recordBalanceSchema>;
+
+/** Records a new balance snapshot. Never updates a prior one — a snapshot is
+ * a point-in-time fact, and get_dashboard() always reads the latest row per
+ * account, so history stays intact for later auditing. */
+export async function recordBalance(
+  input: RecordBalanceInput,
+): Promise<{ error: string } | undefined> {
+  const { supabase, userId } = await requireUser();
+
+  const parsed = recordBalanceSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Balance not saved." };
+  }
+
+  const { error } = await supabase.from("spend_balances").insert({
+    user_id: userId,
+    account: parsed.data.account,
+    amount: parsed.data.amount,
+  });
+
+  if (error) {
+    return { error: `Balance not saved. ${error.message}` };
+  }
+}
+
+export async function setCountBobAsCash(
+  value: boolean,
+): Promise<{ error: string } | undefined> {
+  const { supabase, userId } = await requireUser();
+
+  const { error } = await supabase.from("spend_settings").upsert(
+    { user_id: userId, count_bob_as_cash: value, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+
+  if (error) {
+    return { error: `Setting not saved. ${error.message}` };
+  }
+}

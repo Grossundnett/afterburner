@@ -357,19 +357,49 @@ export type Database = {
       }
       spend_settings: {
         Row: {
+          count_bob_as_cash: boolean
           updated_at: string
           user_id: string
           weekly_budget: number
         }
         Insert: {
+          count_bob_as_cash?: boolean
           updated_at?: string
           user_id?: string
           weekly_budget?: number
         }
         Update: {
+          count_bob_as_cash?: boolean
           updated_at?: string
           user_id?: string
           weekly_budget?: number
+        }
+        Relationships: []
+      }
+      spend_balances: {
+        Row: {
+          account: string
+          amount: number
+          created_at: string
+          id: string
+          snapshot_at: string
+          user_id: string
+        }
+        Insert: {
+          account: string
+          amount: number
+          created_at?: string
+          id?: string
+          snapshot_at?: string
+          user_id: string
+        }
+        Update: {
+          account?: string
+          amount?: number
+          created_at?: string
+          id?: string
+          snapshot_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -434,6 +464,7 @@ export type Database = {
     Functions: {
       seed_default_sports: { Args: { target: string }; Returns: undefined }
       seed_default_spend_categories: { Args: { target: string }; Returns: undefined }
+      get_dashboard: { Args: { p_today: string }; Returns: Json }
     }
     Enums: {
       [_ in never]: never

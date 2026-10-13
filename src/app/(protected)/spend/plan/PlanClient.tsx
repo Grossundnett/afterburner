@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
-import { saveMonthPlan } from "./actions";
+import { saveMonthPlan, recordBalance, setCountBobAsCash } from "./actions";
 
 export type PlanGroup = {
   group: string;
   emoji: string;
   label: string;
 };
+
+const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
 
 type Props = {
   month: string;        // YYYY-MM
@@ -19,6 +21,8 @@ type Props = {
   category_budgets: Record<string, number>;
   weeklyGroups: PlanGroup[];
   monthlyGroups: PlanGroup[];
+  balances: Record<string, number>;
+  countBobAsCash: boolean;
 };
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -34,14 +38,16 @@ function NumInput({
   label,
   value,
   onChange,
+  indent,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  indent?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <label className="text-text">{label}</label>
+    <div className={`flex items-center justify-between gap-3 ${indent ? "ml-5" : ""}`}>
+      <label className={indent ? "text-[0.9rem] text-text-muted" : "text-text"}>{label}</label>
       <div className="relative w-[140px]">
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-spend-display font-bold text-text-muted">
           ₹
@@ -68,6 +74,8 @@ export function PlanClient({
   category_budgets: initBudgets,
   weeklyGroups,
   monthlyGroups,
+  balances,
+  countBobAsCash: initCountBob,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +91,8 @@ export function PlanClient({
       const v = initBudgets[g.group];
       init[g.group] = v && v > 0 ? String(v) : "";
     }
+    const lateTax = initBudgets["Transport:late_tax"];
+    init["Transport:late_tax"] = lateTax && lateTax > 0 ? String(lateTax) : "1500";
     return init;
   });
 
@@ -90,8 +100,13 @@ export function PlanClient({
   const sumWeeklyPerWeek = weeklyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
   const sumWeeklyMonthly = sumWeeklyPerWeek * 4;
   const sumMonthly = monthlyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
-  const totalOut = n(investments) + n(savingsTarget) + n(buffer) + sumMonthly + sumWeeklyMonthly;
-  const unallocated = n(salary) - totalOut;
+  const allocated = sumMonthly + sumWeeklyMonthly;
+
+  // The discretionary cap is what funds the day-weighted allowance in
+  // get_dashboard() — it's salary minus the automatic sweeps only. The six
+  // bucket budgets are a separate, advisory split of that cap; they don't
+  // subtract from it, so "allocated" vs "cap" is a check, not an identity.
+  const discretionaryCap = n(salary) - n(investments) - n(savingsTarget) - n(buffer);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -103,6 +118,8 @@ export function PlanClient({
       const v = n(groupBudgets[g.group] ?? "");
       if (v > 0) categoryBudgets[g.group] = v;
     }
+    const lateTax = n(groupBudgets["Transport:late_tax"] ?? "");
+    if (lateTax > 0) categoryBudgets["Transport:late_tax"] = lateTax;
 
     startTransition(async () => {
       const result = await saveMonthPlan({
@@ -124,110 +141,228 @@ export function PlanClient({
   const fieldRow = "flex flex-col gap-5 rounded-2xl border-[1.5px] border-border bg-surface p-4";
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <div className="flex items-baseline justify-between">
-        <h1 className="font-spend-display text-[1.3rem] font-bold text-text">{monthLabel}</h1>
-        <span className="text-[0.9rem] text-text-muted">month plan</span>
-      </div>
+    <div className="flex flex-col gap-5">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <div className="flex items-baseline justify-between">
+          <h1 className="font-spend-display text-[1.3rem] font-bold text-text">{monthLabel}</h1>
+          <span className="text-[0.9rem] text-text-muted">month plan</span>
+        </div>
 
-      {/* Income */}
-      <div className={fieldRow}>
-        <h2 className="font-spend-display font-bold text-text">Income</h2>
-        <NumInput label="Salary" value={salary} onChange={setSalary} />
-      </div>
+        {/* Income */}
+        <div className={fieldRow}>
+          <h2 className="font-spend-display font-bold text-text">Income</h2>
+          <NumInput label="Salary" value={salary} onChange={setSalary} />
+        </div>
 
-      {/* Fixed outflows */}
-      <div className={fieldRow}>
-        <h2 className="font-spend-display font-bold text-text">Fixed outflows</h2>
-        <NumInput label="Investments" value={investments} onChange={setInvestments} />
-        <NumInput label="Savings target" value={savingsTarget} onChange={setSavingsTarget} />
-        <NumInput label="Buffer" value={buffer} onChange={setBuffer} />
-      </div>
-
-      {/* Weekly budgets (per week — reset every Monday) */}
-      <div className={fieldRow}>
-        <h2 className="font-spend-display font-bold text-text">Weekly budgets</h2>
-        <p className="text-[0.88rem] text-text-muted">
-          Per week. The spend page applies Mom&apos;s rule: 0.8× in weeks 1-2, 1.2× in weeks 3+.
-        </p>
-        {weeklyGroups.map((g) => (
-          <NumInput
-            key={g.group}
-            label={`${g.emoji} ${g.label}`}
-            value={groupBudgets[g.group] ?? ""}
-            onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
-          />
-        ))}
-      </div>
-
-      {/* Monthly category budgets */}
-      <div className={fieldRow}>
-        <h2 className="font-spend-display font-bold text-text">Monthly budgets</h2>
-        <p className="text-[0.88rem] text-text-muted">
-          Any group left blank rolls into Others on the spend page.
-        </p>
-        {monthlyGroups.map((g) => (
-          <NumInput
-            key={g.group}
-            label={`${g.emoji} ${g.label}`}
-            value={groupBudgets[g.group] ?? ""}
-            onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
-          />
-        ))}
-      </div>
-
-      {/* Live summary */}
-      <div className="rounded-2xl border-[1.5px] border-border bg-surface p-4">
-        <h2 className="font-spend-display font-bold text-text">Summary</h2>
-        <div className="mt-3 flex flex-col gap-2 text-[0.9rem]">
-          <div className="flex justify-between text-text-muted">
-            <span>Salary</span>
-            <span>{money.format(n(salary))}</span>
-          </div>
-          <div className="flex justify-between text-text-muted">
-            <span>− Investments</span>
-            <span>{money.format(n(investments))}</span>
-          </div>
-          <div className="flex justify-between text-text-muted">
-            <span>− Savings target</span>
-            <span>{money.format(n(savingsTarget))}</span>
-          </div>
-          <div className="flex justify-between text-text-muted">
-            <span>− Buffer</span>
-            <span>{money.format(n(buffer))}</span>
-          </div>
-          <div className="flex justify-between text-text-muted">
-            <span>− Monthly budgets</span>
-            <span>{money.format(sumMonthly)}</span>
-          </div>
-          <div className="flex justify-between text-text-muted">
-            <span>− Weekly budgets × 4</span>
-            <span>{money.format(sumWeeklyMonthly)}</span>
-          </div>
-          <div
-            className={`mt-1 flex justify-between border-t border-border pt-2 font-bold ${
-              unallocated < 0 ? "text-over" : "text-text"
-            }`}
-          >
-            <span>Unallocated</span>
-            <span>{money.format(unallocated)}</span>
+        {/* Fixed outflows */}
+        <div className={fieldRow}>
+          <h2 className="font-spend-display font-bold text-text">Fixed outflows</h2>
+          <NumInput label="Investments" value={investments} onChange={setInvestments} />
+          <NumInput label="Savings target" value={savingsTarget} onChange={setSavingsTarget} />
+          <NumInput label="Buffer" value={buffer} onChange={setBuffer} />
+          <div className="flex justify-between border-t border-border pt-3 text-[0.9rem] font-bold text-text">
+            <span>Discretionary cap this cycle</span>
+            <span>{money.format(discretionaryCap)}</span>
           </div>
         </div>
-      </div>
+
+        {/* Weekly budgets (per week — reset every Monday) */}
+        <div className={fieldRow}>
+          <h2 className="font-spend-display font-bold text-text">Weekly budgets</h2>
+          <p className="text-[0.88rem] text-text-muted">
+            Per week. The spend page applies Mom&apos;s rule: 0.8× in days 1-14 of the
+            cycle, 1.2× from day 15.
+          </p>
+          {weeklyGroups.map((g) => (
+            <div key={g.group} className="flex flex-col gap-2">
+              <NumInput
+                label={`${g.emoji} ${g.label}`}
+                value={groupBudgets[g.group] ?? ""}
+                onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
+              />
+              {g.group === "Transport" && (
+                <NumInput
+                  label="⏰ Late tax (bike taxis, per month)"
+                  value={groupBudgets["Transport:late_tax"] ?? ""}
+                  onChange={(v) =>
+                    setGroupBudgets((prev) => ({ ...prev, "Transport:late_tax": v }))
+                  }
+                  indent
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Monthly category budgets */}
+        <div className={fieldRow}>
+          <h2 className="font-spend-display font-bold text-text">Monthly budgets</h2>
+          <p className="text-[0.88rem] text-text-muted">
+            Any bucket left blank still tracks spend, just with no bar to compare it to.
+          </p>
+          {monthlyGroups.map((g) => (
+            <NumInput
+              key={g.group}
+              label={`${g.emoji} ${g.label}`}
+              value={groupBudgets[g.group] ?? ""}
+              onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
+            />
+          ))}
+        </div>
+
+        {/* Live summary */}
+        <div className="rounded-2xl border-[1.5px] border-border bg-surface p-4">
+          <h2 className="font-spend-display font-bold text-text">Summary</h2>
+          <div className="mt-3 flex flex-col gap-2 text-[0.9rem]">
+            <div className="flex justify-between text-text-muted">
+              <span>Salary</span>
+              <span>{money.format(n(salary))}</span>
+            </div>
+            <div className="flex justify-between text-text-muted">
+              <span>− Investments</span>
+              <span>{money.format(n(investments))}</span>
+            </div>
+            <div className="flex justify-between text-text-muted">
+              <span>− Savings target</span>
+              <span>{money.format(n(savingsTarget))}</span>
+            </div>
+            <div className="flex justify-between text-text-muted">
+              <span>− Buffer</span>
+              <span>{money.format(n(buffer))}</span>
+            </div>
+            <div className="mt-1 flex justify-between border-t border-border pt-2 font-bold text-text">
+              <span>Discretionary cap</span>
+              <span>{money.format(discretionaryCap)}</span>
+            </div>
+            <div className="flex justify-between text-text-muted">
+              <span>Allocated (weekly × 4 + monthly)</span>
+              <span>{money.format(allocated)}</span>
+            </div>
+            <div
+              className={`flex justify-between font-bold ${
+                allocated > discretionaryCap ? "text-over" : "text-text"
+              }`}
+            >
+              <span>{allocated > discretionaryCap ? "Over-allocated by" : "Room left to allocate"}</span>
+              <span>{money.format(Math.abs(discretionaryCap - allocated))}</span>
+            </div>
+          </div>
+        </div>
+
+        {error ? <p className="text-[0.88rem] text-over">{error}</p> : null}
+        {saved ? <p className="text-[0.88rem] text-signal">Plan saved.</p> : null}
+
+        <button
+          type="submit"
+          aria-disabled={isPending}
+          className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+          onClick={(e) => { if (isPending) e.preventDefault(); }}
+        >
+          {isPending ? "Saving…" : "Save plan"}
+        </button>
+      </form>
+
+      <BalancesCard balances={balances} countBobAsCash={initCountBob} />
+    </div>
+  );
+}
+
+function BalancesCard({
+  balances,
+  countBobAsCash,
+}: {
+  balances: Record<string, number>;
+  countBobAsCash: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [savedAccount, setSavedAccount] = useState<string | null>(null);
+  const [countBob, setCountBob] = useState(countBobAsCash);
+  const [error, setError] = useState<string | null>(null);
+
+  function save(account: (typeof ACCOUNTS)[number]) {
+    const amt = Number(inputs[account]);
+    if (!inputs[account] || !(amt >= 0)) {
+      setError("Enter an amount of zero or more.");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await recordBalance({ account, amount: amt });
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      setSavedAccount(account);
+      setInputs((prev) => ({ ...prev, [account]: "" }));
+    });
+  }
+
+  function toggleCountBob(checked: boolean) {
+    setCountBob(checked);
+    startTransition(async () => {
+      await setCountBobAsCash(checked);
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border-[1.5px] border-border bg-surface p-4">
+      <h2 className="font-spend-display font-bold text-text">Balances</h2>
+      <p className="text-[0.88rem] text-text-muted">
+        A snapshot, not a running total — logging a spend lowers it automatically
+        until you correct drift with a fresh number here.
+      </p>
+
+      {ACCOUNTS.map((account) => (
+        <div key={account} className="flex items-center justify-between gap-3">
+          <div>
+            <label className="text-text">{account}</label>
+            {balances[account] != null && (
+              <p className="text-[0.78rem] text-text-muted">
+                last recorded {money.format(balances[account])}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative w-[120px]">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold text-text-muted">
+                ₹
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={inputs[account] ?? ""}
+                onChange={(e) => {
+                  setInputs((prev) => ({ ...prev, [account]: e.target.value }));
+                  setSavedAccount(null);
+                }}
+                className={`w-full rounded-lg border-[1.5px] border-border bg-bg py-2 pl-7 pr-3 text-right text-[16px] text-text focus:border-accent ${focusRing}`}
+              />
+            </div>
+            <button
+              type="button"
+              aria-disabled={isPending}
+              onClick={() => save(account)}
+              className={`rounded-lg border-[1.5px] border-border px-3 py-2 text-[0.85rem] text-text hover:border-accent ${focusRing} aria-disabled:opacity-60`}
+            >
+              {savedAccount === account ? "Saved" : "Update"}
+            </button>
+          </div>
+        </div>
+      ))}
 
       {error ? <p className="text-[0.88rem] text-over">{error}</p> : null}
-      {saved ? (
-        <p className="text-[0.88rem] text-signal">Plan saved.</p>
-      ) : null}
 
-      <button
-        type="submit"
-        aria-disabled={isPending}
-        className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
-        onClick={(e) => { if (isPending) e.preventDefault(); }}
-      >
-        {isPending ? "Saving…" : "Save plan"}
-      </button>
-    </form>
+      <label className="flex items-center gap-2 border-t border-border pt-3 text-[0.88rem] text-text-muted">
+        <input
+          type="checkbox"
+          checked={countBob}
+          onChange={(e) => toggleCountBob(e.target.checked)}
+          className="h-4 w-4"
+        />
+        Count BOB&apos;s spendable remainder as real money left (off once the
+        weekly Apex transfer habit is established)
+      </label>
+    </div>
   );
 }

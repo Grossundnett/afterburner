@@ -1,5 +1,5 @@
 import { createClient, getClaims } from "@/lib/supabase/server";
-import { todayIn } from "@/lib/dates";
+import { todayIn, cycleMonth } from "@/lib/dates";
 import { groupDisplay } from "@/lib/spend-groups";
 import Link from "next/link";
 import { PlanClient, type PlanGroup } from "./PlanClient";
@@ -34,21 +34,39 @@ export default async function PlanPage() {
     .maybeSingle();
 
   const today = todayIn(profile?.timezone ?? "UTC");
-  const month = today.slice(0, 7); // YYYY-MM
+  const month = cycleMonth(today); // YYYY-MM governing today's payday cycle
 
-  const [{ data: plan }, { data: catRows }] = await Promise.all([
-    supabase
-      .from("spend_month_plans")
-      .select("salary,investments,savings_target,buffer,category_budgets")
-      .eq("user_id", userId)
-      .eq("month", month)
-      .maybeSingle(),
-    supabase
-      .from("spend_categories")
-      .select("key, label, emoji, kind, sort, group, subgroup")
-      .eq("user_id", userId)
-      .order("sort", { ascending: true }),
-  ]);
+  const [{ data: plan }, { data: catRows }, { data: balanceRows }, { data: settingsRow }] =
+    await Promise.all([
+      supabase
+        .from("spend_month_plans")
+        .select("salary,investments,savings_target,buffer,category_budgets")
+        .eq("user_id", userId)
+        .eq("month", month)
+        .maybeSingle(),
+      supabase
+        .from("spend_categories")
+        .select("key, label, emoji, kind, sort, group, subgroup")
+        .eq("user_id", userId)
+        .order("sort", { ascending: true }),
+      supabase
+        .from("spend_balances")
+        .select("account, amount, snapshot_at")
+        .eq("user_id", userId)
+        .order("snapshot_at", { ascending: false }),
+      supabase
+        .from("spend_settings")
+        .select("count_bob_as_cash")
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+
+  // Latest snapshot per account — balanceRows is newest-first, so the first
+  // occurrence of each account is its current snapshot.
+  const latestBalances: Record<string, number> = {};
+  for (const row of balanceRows ?? []) {
+    if (!(row.account in latestBalances)) latestBalances[row.account] = Number(row.amount);
+  }
 
   // One row per group, built per kind separately so Food/Travel surface on
   // the weekly card and the rest on the monthly card. The row's display name
@@ -101,6 +119,8 @@ export default async function PlanPage() {
           category_budgets={storedBudgets}
           weeklyGroups={weeklyGroups}
           monthlyGroups={monthlyGroups}
+          balances={latestBalances}
+          countBobAsCash={settingsRow?.count_bob_as_cash ?? true}
         />
       </div>
     </main>

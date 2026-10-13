@@ -7,6 +7,10 @@ metrics, and a discipline layer built around wake time.
 tokens). **Read `BUILD.md`** for the ordered build steps and where we currently
 are. **Read `PHASE2.md`** for the prioritised backlog from a month of real use.
 
+**`Spend_Research.md` is the source of truth for `/spend`** and supersedes any
+earlier spend spec given in conversation. Where the two disagree, the research
+brief wins.
+
 ## How to work with me
 
 Work in small, reviewable increments. One concern per commit.

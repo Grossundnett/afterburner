@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { todayIn } from "@/lib/dates";
+import { todayIn, cycleMonth } from "@/lib/dates";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
 /** Postgres uuid, as rendered alongside each expense row. */
@@ -126,6 +126,74 @@ export async function deleteExpense(id: string) {
 
   if (error) {
     return { error: `Not removed. ${error.message}` };
+  }
+
+  revalidatePath("/spend");
+}
+
+const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
+
+const coverOverspendSchema = z.object({
+  from: z.enum(BUCKETS),
+  to: z.enum(BUCKETS),
+  amount: z.coerce.number().positive(),
+});
+
+/** "This week's move" — shifts budget between two buckets on the current
+ * cycle's plan, YNAB-style. Edits the stored per-week (weekly kind) or
+ * per-month (monthly kind) figure directly; there's no separate "available"
+ * ledger here, so moving money permanently reduces the donor's template
+ * budget rather than borrowing from cash left over this period only. */
+export async function coverOverspend(input: {
+  from: string;
+  to: string;
+  amount: number;
+}) {
+  const { supabase, userId } = await requireUser();
+
+  const parsed = coverOverspendSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Could not move budget." };
+  }
+  if (parsed.data.from === parsed.data.to) {
+    return { error: "Pick two different buckets." };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("timezone")
+    .eq("id", userId)
+    .maybeSingle();
+  const today = todayIn(profile?.timezone ?? "UTC");
+  const month = cycleMonth(today);
+
+  const { data: plan } = await supabase
+    .from("spend_month_plans")
+    .select("category_budgets")
+    .eq("user_id", userId)
+    .eq("month", month)
+    .maybeSingle();
+
+  if (!plan) {
+    return { error: "No plan for this cycle yet." };
+  }
+
+  const budgets = { ...(plan.category_budgets as Record<string, number>) };
+  const fromBudget = budgets[parsed.data.from] ?? 0;
+  const toBudget = budgets[parsed.data.to] ?? 0;
+  const moved = Math.min(parsed.data.amount, fromBudget);
+
+  budgets[parsed.data.from] = Math.round((fromBudget - moved) * 100) / 100;
+  budgets[parsed.data.to] = Math.round((toBudget + moved) * 100) / 100;
+
+  const { error } = await supabase
+    .from("spend_month_plans")
+    .update({ category_budgets: budgets })
+    .eq("user_id", userId)
+    .eq("month", month);
+
+  if (error) {
+    return { error: `Budget not moved. ${error.message}` };
   }
 
   revalidatePath("/spend");
