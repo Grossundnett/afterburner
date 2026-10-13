@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { addDays, daysBetween } from "@/lib/dates";
+import { parseMoney } from "@/lib/money";
 
 import { addExpense, coverOverspend, deleteExpense } from "./actions";
 
@@ -258,8 +259,8 @@ export function SpendClient({
     e.preventDefault();
     setFormError(null);
 
-    const amt = Number(amount);
-    if (!amount || !(amt > 0)) {
+    const amt = parseMoney(amount);
+    if (!amount.trim() || !(amt > 0)) {
       setFormError("Enter an amount above zero.");
       return;
     }

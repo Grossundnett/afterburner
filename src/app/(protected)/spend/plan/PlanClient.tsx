@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
+import { parseMoney } from "@/lib/money";
 import { saveMonthPlan, recordBalance, setCountBobAsCash } from "./actions";
 
 export type PlanGroup = {
@@ -96,7 +97,7 @@ export function PlanClient({
     return init;
   });
 
-  const n = (v: string) => Number(v) || 0;
+  const n = parseMoney;
   const sumWeeklyPerWeek = weeklyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
   const sumWeeklyMonthly = sumWeeklyPerWeek * 4;
   const sumMonthly = monthlyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
@@ -281,8 +282,9 @@ function BalancesCard({
   const [error, setError] = useState<string | null>(null);
 
   function save(account: (typeof ACCOUNTS)[number]) {
-    const amt = Number(inputs[account]);
-    if (!inputs[account] || !(amt >= 0)) {
+    const raw = inputs[account] ?? "";
+    const amt = parseMoney(raw);
+    if (!raw.trim() || !(amt >= 0)) {
       setError("Enter an amount of zero or more.");
       return;
     }
