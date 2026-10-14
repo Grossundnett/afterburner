@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { addDays, daysBetween } from "@/lib/dates";
+import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
 
 import { addExpense, coverOverspend, deleteExpense } from "./actions";
@@ -74,7 +75,6 @@ type Props = {
 };
 
 const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
-const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
 
 // Overflow caps at +50% past the budget mark, so one blown bar can't make the
 // others unreadable. The real rupee figure next to it carries the magnitude.

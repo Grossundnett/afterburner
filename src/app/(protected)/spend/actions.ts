@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { todayIn, cycleMonth } from "@/lib/dates";
+import { ACCOUNTS } from "@/lib/accounts";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
 /** Postgres uuid, as rendered alongside each expense row. */
@@ -30,8 +31,6 @@ async function requireUser() {
 
   return { supabase, userId };
 }
-
-const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
 
 const addExpenseSchema = z.object({
   // Rounded to 2 decimals to match the numeric(10,2) column; a client-side

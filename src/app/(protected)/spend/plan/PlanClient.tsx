@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
+import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
 import { saveMonthPlan, recordBalance, setCountBobAsCash } from "./actions";
 
@@ -9,8 +10,6 @@ export type PlanGroup = {
   emoji: string;
   label: string;
 };
-
-const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
 
 type Props = {
   month: string;        // YYYY-MM

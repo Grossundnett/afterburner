@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { ACCOUNTS } from "@/lib/accounts";
 import { createClient, getClaims } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -64,8 +65,6 @@ export async function saveMonthPlan(
     return { error: "Plan not saved — the database accepted no error but returned no row." };
   }
 }
-
-const ACCOUNTS = ["Apex", "BOB", "Cash"] as const;
 
 const recordBalanceSchema = z.object({
   account: z.enum(ACCOUNTS),
