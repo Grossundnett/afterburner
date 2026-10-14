@@ -93,17 +93,23 @@ export async function addExpense(input: AddExpenseInput) {
     return { error: "That date is in the future." };
   }
 
-  const { error } = await supabase.from("expenses").insert({
-    user_id: userId,
-    amount: parsed.data.amount,
-    category: parsed.data.category,
-    note: parsed.data.note,
-    spent_on: parsed.data.spentOn,
-    account: parsed.data.account,
-  });
+  const { data, error } = await supabase
+    .from("expenses")
+    .insert({
+      user_id: userId,
+      amount: parsed.data.amount,
+      category: parsed.data.category,
+      note: parsed.data.note,
+      spent_on: parsed.data.spentOn,
+      account: parsed.data.account,
+    })
+    .select();
 
   if (error) {
     return { error: `Nothing was saved. ${error.message}` };
+  }
+  if (!data || data.length === 0) {
+    return { error: "Nothing was saved — the database accepted no error but returned no row." };
   }
 
   revalidatePath("/spend");
@@ -197,14 +203,18 @@ export async function coverOverspend(input: {
   adjustments[parsed.data.from] = Math.round((fromAdj - moved) * 100) / 100;
   adjustments[parsed.data.to] = Math.round((toAdj + moved) * 100) / 100;
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("spend_month_plans")
     .update({ adjustments })
     .eq("user_id", userId)
-    .eq("month", month);
+    .eq("month", month)
+    .select();
 
   if (error) {
     return { error: `Budget not moved. ${error.message}` };
+  }
+  if (!data || data.length === 0) {
+    return { error: "Budget not moved — the database accepted no error but returned no row." };
   }
 
   revalidatePath("/spend");

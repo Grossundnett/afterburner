@@ -37,21 +37,31 @@ export async function saveMonthPlan(
 
   const { month, salary, investments, savings_target, buffer, category_budgets } = parsed.data;
 
-  const { error } = await supabase.from("spend_month_plans").upsert(
-    {
-      user_id: userId,
-      month,
-      salary,
-      investments,
-      savings_target,
-      buffer,
-      category_budgets,
-    },
-    { onConflict: "user_id,month" },
-  );
+  const { data, error } = await supabase
+    .from("spend_month_plans")
+    .upsert(
+      {
+        user_id: userId,
+        month,
+        salary,
+        investments,
+        savings_target,
+        buffer,
+        category_budgets,
+      },
+      { onConflict: "user_id,month" },
+    )
+    .select();
 
   if (error) {
     return { error: `Plan not saved. ${error.message}` };
+  }
+  // Every mutation here forces the row back with .select(). A write that
+  // reports no error but no row either (RLS silently filtering the result,
+  // a conflict target that doesn't match a real constraint) is still a
+  // failure — three rounds were lost to exactly this kind of silent miss.
+  if (!data || data.length === 0) {
+    return { error: "Plan not saved — the database accepted no error but returned no row." };
   }
 }
 
@@ -77,14 +87,20 @@ export async function recordBalance(
     return { error: parsed.error.issues[0]?.message ?? "Balance not saved." };
   }
 
-  const { error } = await supabase.from("spend_balances").insert({
-    user_id: userId,
-    account: parsed.data.account,
-    amount: parsed.data.amount,
-  });
+  const { data, error } = await supabase
+    .from("spend_balances")
+    .insert({
+      user_id: userId,
+      account: parsed.data.account,
+      amount: parsed.data.amount,
+    })
+    .select();
 
   if (error) {
     return { error: `Balance not saved. ${error.message}` };
+  }
+  if (!data || data.length === 0) {
+    return { error: "Balance not saved — the database accepted no error but returned no row." };
   }
 }
 
@@ -93,12 +109,18 @@ export async function setCountBobAsCash(
 ): Promise<{ error: string } | undefined> {
   const { supabase, userId } = await requireUser();
 
-  const { error } = await supabase.from("spend_settings").upsert(
-    { user_id: userId, count_bob_as_cash: value, updated_at: new Date().toISOString() },
-    { onConflict: "user_id" },
-  );
+  const { data, error } = await supabase
+    .from("spend_settings")
+    .upsert(
+      { user_id: userId, count_bob_as_cash: value, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" },
+    )
+    .select();
 
   if (error) {
     return { error: `Setting not saved. ${error.message}` };
+  }
+  if (!data || data.length === 0) {
+    return { error: "Setting not saved — the database accepted no error but returned no row." };
   }
 }

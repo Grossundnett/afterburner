@@ -303,7 +303,11 @@ function BalancesCard({
   function toggleCountBob(checked: boolean) {
     setCountBob(checked);
     startTransition(async () => {
-      await setCountBobAsCash(checked);
+      const result = await setCountBobAsCash(checked);
+      if (result?.error) {
+        setError(result.error);
+        setCountBob(!checked); // revert the optimistic flip, it didn't actually save
+      }
     });
   }
 
