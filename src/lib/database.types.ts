@@ -100,6 +100,7 @@ export type Database = {
           amount: number
           category: string
           created_at: string
+          emotion: string | null
           guilty: boolean
           id: string
           note: string | null
@@ -115,6 +116,7 @@ export type Database = {
           amount: number
           category: string
           created_at?: string
+          emotion?: string | null
           guilty?: boolean
           id?: string
           note?: string | null
@@ -130,6 +132,7 @@ export type Database = {
           amount?: number
           category?: string
           created_at?: string
+          emotion?: string | null
           guilty?: boolean
           id?: string
           note?: string | null
@@ -217,7 +220,7 @@ export type Database = {
       spend_month_plans: {
         Row: {
           adjustments: Json
-          buffer: number
+          big_buy_accrual: number
           category_budgets: Json
           created_at: string
           food_budget: number
@@ -231,7 +234,7 @@ export type Database = {
         }
         Insert: {
           adjustments?: Json
-          buffer?: number
+          big_buy_accrual?: number
           category_budgets?: Json
           created_at?: string
           food_budget?: number
@@ -245,7 +248,7 @@ export type Database = {
         }
         Update: {
           adjustments?: Json
-          buffer?: number
+          big_buy_accrual?: number
           category_budgets?: Json
           created_at?: string
           food_budget?: number
@@ -256,6 +259,24 @@ export type Database = {
           transport_budget?: number
           user_id?: string
           week_weights?: Json
+        }
+        Relationships: []
+      }
+      spend_transfers: {
+        Row: {
+          ticked_at: string
+          user_id: string
+          week_mon: string
+        }
+        Insert: {
+          ticked_at?: string
+          user_id: string
+          week_mon: string
+        }
+        Update: {
+          ticked_at?: string
+          user_id?: string
+          week_mon?: string
         }
         Relationships: []
       }

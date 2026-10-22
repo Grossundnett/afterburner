@@ -40,7 +40,7 @@ export default async function PlanPage() {
     await Promise.all([
       supabase
         .from("spend_month_plans")
-        .select("salary,investments,savings_target,buffer,category_budgets")
+        .select("salary,investments,savings_target,big_buy_accrual,category_budgets")
         .eq("user_id", userId)
         .eq("month", month)
         .maybeSingle(),
@@ -115,7 +115,7 @@ export default async function PlanPage() {
           salary={Number(plan?.salary ?? 0)}
           investments={Number(plan?.investments ?? 0)}
           savings_target={Number(plan?.savings_target ?? 0)}
-          buffer={Number(plan?.buffer ?? 0)}
+          big_buy_accrual={Number(plan?.big_buy_accrual ?? 0)}
           category_budgets={storedBudgets}
           weeklyGroups={weeklyGroups}
           monthlyGroups={monthlyGroups}

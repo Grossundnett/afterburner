@@ -20,7 +20,7 @@ const saveMonthPlanSchema = z.object({
   salary: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
   investments: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
   savings_target: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
-  buffer: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
+  big_buy_accrual: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
   category_budgets: z.record(z.string(), z.number().min(0)),
 });
 
@@ -36,7 +36,7 @@ export async function saveMonthPlan(
     return { error: parsed.error.issues[0]?.message ?? "Plan could not be saved." };
   }
 
-  const { month, salary, investments, savings_target, buffer, category_budgets } = parsed.data;
+  const { month, salary, investments, savings_target, big_buy_accrual, category_budgets } = parsed.data;
 
   const { data, error } = await supabase
     .from("spend_month_plans")
@@ -47,7 +47,7 @@ export async function saveMonthPlan(
         salary,
         investments,
         savings_target,
-        buffer,
+        big_buy_accrual,
         category_budgets,
       },
       { onConflict: "user_id,month" },

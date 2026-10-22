@@ -40,7 +40,7 @@ export type DashboardCategory = {
   spent: number;
   pace: number;
   over: boolean;
-  kind: "weekly" | "monthly";
+  kind: "weekly" | "monthly" | "fund";
   late_tax: { budget: number; spent: number; over: boolean } | null;
 };
 
@@ -50,7 +50,11 @@ export type Dashboard =
       has_plan: true;
       cycle_start: string;
       cycle_end: string;
+      new_rules: boolean;
       discretionary_cap: number;
+      incap_total: number;
+      unassigned: number;
+      big_buy_fund: number;
       cycle_spent_total: number;
       month_debt: number;
       budget_left_this_week: number;
@@ -134,6 +138,7 @@ function BudgetBar({
   budget,
   pace,
   sub,
+  kind,
 }: {
   emoji: string;
   label: string;
@@ -141,16 +146,28 @@ function BudgetBar({
   budget: number;
   pace?: number;
   sub?: { label: string; spent: number; budget: number; over: boolean } | null;
+  kind?: "weekly" | "monthly" | "fund";
 }) {
+  const isFund = kind === "fund";
   const pct = budget > 0 ? (total / budget) * 100 : 0;
   const isOver = pct > 100;
-  const pacePct = pace != null && budget > 0 ? Math.min(100, (pace / budget) * 100) : null;
-  const aheadOfPace = !isOver && pacePct != null && pct > pacePct + 0.5;
+  // A fund isn't a budget you pace against — it just has money in it or it
+  // doesn't, so the pace tick (and the amber "ahead of pace" framing) never
+  // applies to it.
+  const pacePct = !isFund && pace != null && budget > 0 ? Math.min(100, (pace / budget) * 100) : null;
+  const aheadOfPace = !isFund && !isOver && pacePct != null && pct > pacePct + 0.5;
   const basePct = Math.min(100, pct) / BAR_SCALE;
   const overflowPct = isOver ? Math.min(50, pct - 100) / BAR_SCALE : 0;
   const delta = Math.abs(budget - total);
-  const sideLabel =
-    budget === 0 ? "no budget" : isOver ? `${money.format(delta)} over` : `${money.format(delta)} left`;
+  const sideLabel = isFund
+    ? isOver
+      ? `${money.format(delta)} over the fund`
+      : `${money.format(delta)} available`
+    : budget === 0
+      ? "no budget"
+      : isOver
+        ? `${money.format(delta)} over`
+        : `${money.format(delta)} left`;
 
   const fillColor = isOver ? "bg-over" : aheadOfPace ? "bg-signal" : "bg-accent";
 
@@ -329,7 +346,11 @@ export function SpendClient({
         total: c.spent,
         budget: c.budget,
         pace: c.kind === "monthly" ? c.pace : undefined,
-        over: c.spent - c.budget,
+        kind: c.kind,
+        // A fund being under its own total is never "overspend" in the
+        // mover's sense — Big Buy is never a candidate to cover from or
+        // to be covered, so it should never sort to the top of the list.
+        over: c.kind === "fund" ? -Infinity : c.spent - c.budget,
         sub:
           c.late_tax != null
             ? { label: "Late tax", spent: c.late_tax.spent, budget: c.late_tax.budget, over: c.late_tax.over }
@@ -346,7 +367,9 @@ export function SpendClient({
   // research brief rules out, and "nothing to move" has no number to show.
   //
   // Food and Transport are never donors — they're essentials, not slack to
-  // raid. And Cover is only offered when a single eligible donor's own room
+  // raid. Big Buy's fund is never a donor either — it isn't budget money in
+  // the same pool, it's a separate accrual that happens to render as a bar.
+  // And Cover is only offered when a single eligible donor's own room
   // fully resolves the overspend; the UI moves from one bucket at a time,
   // so proposing a move that leaves the bucket still over is worse than no
   // suggestion. When nothing qualifies, say so with the number rather than
@@ -362,6 +385,7 @@ export function SpendClient({
         (r) =>
           r.bucket !== worst.bucket &&
           !ESSENTIAL_BUCKETS.has(r.bucket) &&
+          r.kind !== "fund" &&
           r.budget - r.total > 0,
       )
       .sort((a, b) => (b.budget - b.total) - (a.budget - a.total));
@@ -521,6 +545,7 @@ export function SpendClient({
               budget={r.budget}
               pace={r.pace}
               sub={r.sub}
+              kind={r.kind}
             />
           ))}
         </div>
