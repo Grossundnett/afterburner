@@ -53,6 +53,14 @@ const addExpenseSchema = z.object({
   // Which account the money came from, for balance drawdown. Defaults to
   // Apex (the DB column default too) so existing callers keep working.
   account: z.enum(ACCOUNTS).optional().default("Apex"),
+  // Only ever shown on the form for Fun/Big Buy entries — optional even
+  // then, since tagging every single spend is exactly the kind of extra
+  // decision SPEND_RESEARCH.md rules out.
+  emotion: z
+    .enum(["bored", "lonely", "celebrating", "punishing"])
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 export type AddExpenseInput = z.input<typeof addExpenseSchema>;
@@ -101,6 +109,7 @@ export async function addExpense(input: AddExpenseInput) {
       note: parsed.data.note,
       spent_on: parsed.data.spentOn,
       account: parsed.data.account,
+      emotion: parsed.data.emotion,
     })
     .select();
 

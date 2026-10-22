@@ -78,7 +78,11 @@ type Props = {
   dashboard: Dashboard;
   isMonday: boolean;
   transferTicked: boolean;
+  emotionStat: { pct: number; tag: string } | null;
 };
+
+const EMOTIONS = ["bored", "lonely", "celebrating", "punishing"] as const;
+type Emotion = (typeof EMOTIONS)[number];
 
 const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
 
@@ -241,6 +245,7 @@ export function SpendClient({
   dashboard,
   isMonday,
   transferTicked,
+  emotionStat,
 }: Props) {
   const pillCats = categories.slice(0, 8);
   const moreCats = categories.slice(8);
@@ -282,7 +287,13 @@ export function SpendClient({
   const [category, setCategory] = useState<string>(categories[0]?.key ?? "");
   const [day, setDay] = useState(defaultDay);
   const [account, setAccount] = useState<(typeof ACCOUNTS)[number]>("Apex");
+  const [emotion, setEmotion] = useState<Emotion | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
+
+  // Only Fun and Big Buy ever show the emotion picker — the other four
+  // buckets never add this extra decision to logging a spend.
+  const selectedGroup = categories.find((c) => c.key === category)?.group ?? null;
+  const showEmotionPicker = selectedGroup === "Fun" || selectedGroup === "Big Buy";
 
   const [trackedWeekMon, setTrackedWeekMon] = useState(weekMon);
   if (weekMon !== trackedWeekMon) {
@@ -318,6 +329,7 @@ export function SpendClient({
         note: trimmedNote || null,
         spentOn: day,
         account,
+        emotion: showEmotionPicker ? emotion : null,
       });
 
       if (result?.error) {
@@ -327,6 +339,7 @@ export function SpendClient({
 
       setAmount("");
       setNote("");
+      setEmotion(null);
       amountRef.current?.focus();
     });
   }
@@ -596,6 +609,13 @@ export function SpendClient({
         </div>
       )}
 
+      {emotionStat && (
+        <p className="text-[0.82rem] text-text-muted">
+          {emotionStat.pct}% of Fun/Big Buy spend these last 4 weeks was tagged{" "}
+          <span className="capitalize">{emotionStat.tag}</span>.
+        </p>
+      )}
+
       {/* Month strip */}
       {dashboard.has_plan && (
         <div className="flex flex-col gap-1 border-y border-border py-3 text-[0.85rem] text-text-muted">
@@ -718,7 +738,7 @@ export function SpendClient({
                 key={cat.key}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => setCategory(cat.key)}
+                onClick={() => { setCategory(cat.key); setEmotion(null); }}
                 className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                   selected ? "border-text bg-text text-bg" : "border-border text-text hover:border-accent"
                 }`}
@@ -730,7 +750,7 @@ export function SpendClient({
           {moreCats.length > 0 && (
             <select
               value={moreCats.some((c) => c.key === category) ? category : ""}
-              onChange={(e) => { if (e.target.value) setCategory(e.target.value); }}
+              onChange={(e) => { if (e.target.value) { setCategory(e.target.value); setEmotion(null); } }}
               className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                 moreCats.some((c) => c.key === category)
                   ? "border-text bg-text text-bg"
@@ -746,6 +766,27 @@ export function SpendClient({
             </select>
           )}
         </div>
+
+        {showEmotionPicker && (
+          <div className="flex flex-wrap gap-2">
+            {EMOTIONS.map((e) => {
+              const selected = emotion === e;
+              return (
+                <button
+                  key={e}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setEmotion(selected ? null : e)}
+                  className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.82rem] capitalize transition-colors ${focusRing} ${
+                    selected ? "border-text bg-text text-bg" : "border-border text-text-muted hover:border-accent"
+                  }`}
+                >
+                  {e}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         <input
           type="text"
