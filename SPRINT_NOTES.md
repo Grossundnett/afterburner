@@ -217,13 +217,20 @@ not so it's silently folded back into real money left.
   corrections/backfills of a past spend already waited out elsewhere).
 - `/spend/waitlist` page: three lists —
   - **Waiting** (`now() − added_at < 48h`): item, price, countdown
-  - **Ready to decide** (`>= 48h`, `decision` still `'pending'`): Buy / Skip
+  - **Ready to decide** (`>= 48h`, `decision` still `'pending'`): Buy / Drop
     buttons. Buy inserts into `expenses` (spent_on = today, account = Apex)
-    and sets `decision = 'bought'`. Skip just sets `decision = 'skipped'`.
-  - **Saved by waiting**: sum of `price` where `decision = 'skipped'`, all
+    and sets `decision = 'bought'`. Drop just sets `decision = 'dropped'`.
+  - **Saved by waiting**: sum of `price` where `decision = 'dropped'`, all
     time — the one number that makes waiting feel like it did something.
-- `decision` default is `'pending'` per the existing table (confirmed via
-  the Row type already in `database.types.ts`).
+- `decision`'s real check constraint (confirmed from 0006, not from my own
+  memory of the spec) is `pending|bought|dropped` — **not** `skipped`. Code
+  below uses `dropped`.
+- No GRANT needed on `wait_list` — unlike `spend_balances`, every other
+  spend table (`expenses`, `spend_month_plans`) already works today without
+  an explicit grant in its migration, which only makes sense if Supabase's
+  default privileges already cover new `public` tables. `wait_list` was
+  created the same way, so it's already covered; added nothing to 0016 for
+  this.
 
 ---
 

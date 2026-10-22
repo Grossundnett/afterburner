@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   useTransition,
-  type FormEvent,
 } from "react";
 
 import { addDays, daysBetween } from "@/lib/dates";
@@ -15,6 +14,7 @@ import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
 
 import { addExpense, coverOverspend, deleteExpense, tickTransfer } from "./actions";
+import { addToWaitlist } from "./waitlist/actions";
 
 export type SpendCategory = {
   key: string;
@@ -301,16 +301,28 @@ export function SpendClient({
     setDay(defaultDay);
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setFormError(null);
+  // --- Waitlist gate + night mode (item 5 + 6) -----------------------------
+  // Both are pre-submit interrupts that offer the same choice — waitlist it,
+  // or log it anyway — so they share one piece of state rather than two.
+  // Neither is enforced here: this is the one path that offers waitlisting,
+  // not the only way an over-threshold spend could ever reach `expenses`
+  // (a backfill of something already decided elsewhere still goes straight
+  // through), so there is deliberately no server-side block in addExpense.
+  const WAITLIST_GROUPS = new Set(["Fun", "Subscriptions", "Big Buy"]);
+  const [interrupt, setInterrupt] = useState<"threshold" | "night" | null>(null);
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
+  const [waitlisted, setWaitlisted] = useState(false);
 
-    const amt = parseMoney(amount);
-    if (!amount.trim() || !(amt > 0)) {
-      setFormError("Enter an amount above zero.");
-      return;
-    }
+  function isNightIST(): boolean {
+    const hour = Number(
+      new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false }).format(
+        new Date(),
+      ),
+    );
+    return hour >= 22 || hour < 6;
+  }
 
+  function runSubmit(amt: number) {
     const trimmedNote = note.trim();
     const optimisticExpense: Expense = {
       id: crypto.randomUUID(),
@@ -340,7 +352,56 @@ export function SpendClient({
       setAmount("");
       setNote("");
       setEmotion(null);
+      setInterrupt(null);
       amountRef.current?.focus();
+    });
+  }
+
+  function handleSubmit(e: { preventDefault: () => void }, force = false) {
+    e.preventDefault();
+    setFormError(null);
+
+    const amt = parseMoney(amount);
+    if (!amount.trim() || !(amt > 0)) {
+      setFormError("Enter an amount above zero.");
+      return;
+    }
+
+    if (!force) {
+      const overThreshold = WAITLIST_GROUPS.has(selectedGroup ?? "") && amt > 1500;
+      const isSubscription = selectedGroup === "Subscriptions";
+      if (overThreshold || isSubscription) {
+        setInterrupt("threshold");
+        return;
+      }
+      if ((selectedGroup === "Fun" || selectedGroup === "Subscriptions") && isNightIST()) {
+        setInterrupt("night");
+        return;
+      }
+    }
+
+    runSubmit(amt);
+  }
+
+  function handleWaitlistInstead() {
+    setWaitlistError(null);
+    const amt = parseMoney(amount);
+    const trimmedNote = note.trim();
+    startTransition(async () => {
+      const result = await addToWaitlist({
+        item: trimmedNote || catMeta(category).label,
+        category,
+        price: amt,
+      });
+      if (result?.error) {
+        setWaitlistError(result.error);
+        return;
+      }
+      setAmount("");
+      setNote("");
+      setEmotion(null);
+      setInterrupt(null);
+      setWaitlisted(true);
     });
   }
 
@@ -699,7 +760,7 @@ export function SpendClient({
               inputMode="decimal"
               placeholder="0"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => { setAmount(e.target.value); setInterrupt(null); setWaitlisted(false); }}
               className={`w-full rounded-lg border-[1.5px] border-border bg-bg py-3 pl-8 pr-3 font-spend-display text-[1.5rem] font-bold text-text focus:border-accent ${focusRing}`}
             />
           </div>
@@ -738,7 +799,7 @@ export function SpendClient({
                 key={cat.key}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => { setCategory(cat.key); setEmotion(null); }}
+                onClick={() => { setCategory(cat.key); setEmotion(null); setInterrupt(null); }}
                 className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                   selected ? "border-text bg-text text-bg" : "border-border text-text hover:border-accent"
                 }`}
@@ -750,7 +811,7 @@ export function SpendClient({
           {moreCats.length > 0 && (
             <select
               value={moreCats.some((c) => c.key === category) ? category : ""}
-              onChange={(e) => { if (e.target.value) { setCategory(e.target.value); setEmotion(null); } }}
+              onChange={(e) => { if (e.target.value) { setCategory(e.target.value); setEmotion(null); setInterrupt(null); } }}
               className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                 moreCats.some((c) => c.key === category)
                   ? "border-text bg-text text-bg"
@@ -798,15 +859,52 @@ export function SpendClient({
         />
 
         {formError ? <p className="text-[0.88rem] text-over">{formError}</p> : null}
+        {waitlistError ? <p className="text-[0.88rem] text-over">{waitlistError}</p> : null}
+        {waitlisted ? (
+          <p className="text-[0.88rem] text-signal">
+            Added to the waitlist.{" "}
+            <Link href="/spend/waitlist" className="underline underline-offset-4">
+              View it →
+            </Link>
+          </p>
+        ) : null}
 
-        <button
-          type="submit"
-          aria-disabled={isPending}
-          className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
-          onClick={(e) => { if (isPending) e.preventDefault(); }}
-        >
-          {isPending ? "Adding…" : "Add spend"}
-        </button>
+        {interrupt ? (
+          <div className="flex flex-col gap-2 rounded-lg border-[1.5px] border-signal/50 p-3">
+            <p className="text-[0.9rem] text-text">
+              {interrupt === "threshold"
+                ? "Subscriptions, and anything over ₹1,500 in Fun or Big Buy, get a 48-hour pause before they count."
+                : "It's late. Is this the \"punish myself\" kind? Waitlist it?"}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                aria-disabled={isPending}
+                onClick={handleWaitlistInstead}
+                className={`flex-1 rounded-[10px] bg-accent py-2.5 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+              >
+                Waitlist it
+              </button>
+              <button
+                type="button"
+                aria-disabled={isPending}
+                onClick={(e) => handleSubmit(e, true)}
+                className={`flex-1 rounded-[10px] border-[1.5px] border-border py-2.5 font-bold text-text ${focusRing} aria-disabled:opacity-60`}
+              >
+                Log it anyway
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="submit"
+            aria-disabled={isPending}
+            className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+            onClick={(e) => { if (isPending) e.preventDefault(); }}
+          >
+            {isPending ? "Adding…" : "Add spend"}
+          </button>
+        )}
       </form>
 
       {/* Where it went */}
