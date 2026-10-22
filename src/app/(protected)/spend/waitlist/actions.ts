@@ -65,15 +65,19 @@ export async function addToWaitlist(
 
 const decideWaitlistSchema = z.object({
   id: z.string().regex(UUID, "That item could not be found."),
-  decision: z.enum(["bought", "dropped"]),
+  decision: z.enum(["bought", "expired"]),
 });
 
-/** Buy logs the real spend (today, Apex) and marks the row bought; Drop just
- * marks it dropped. Both are refused server-side if the 48 hours haven't
- * actually elapsed yet — the waitlist page hides the buttons until then,
- * but a hidden button is UI, not enforcement. */
+/** Buy logs the real spend (today, Apex) and marks the row bought — refused
+ * server-side unless 48 hours have genuinely elapsed, since a hidden button
+ * is UI, not enforcement. "expired" is the one terminal non-buy state,
+ * reachable two ways per the brief: immediately via "Don't want it" (no
+ * time requirement — there's no reason to force someone to wait just to
+ * decide against something), or automatically 7 days after unlock via
+ * sweepExpiredWaitlist(). Both produce the same row shape, which is what
+ * "Saved by waiting" sums. */
 export async function decideWaitlist(
-  input: { id: string; decision: "bought" | "dropped" },
+  input: { id: string; decision: "bought" | "expired" },
 ): Promise<{ error: string } | undefined> {
   const { supabase, userId } = await requireUser();
 
@@ -96,12 +100,12 @@ export async function decideWaitlist(
     return { error: "That item was already decided." };
   }
 
-  const hoursWaited = (Date.now() - new Date(row.added_at).getTime()) / 3_600_000;
-  if (hoursWaited < 48) {
-    return { error: "The 48 hours aren't up yet." };
-  }
-
   if (parsed.data.decision === "bought") {
+    const hoursWaited = (Date.now() - new Date(row.added_at).getTime()) / 3_600_000;
+    if (hoursWaited < 48) {
+      return { error: "The 48 hours aren't up yet." };
+    }
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("timezone")
@@ -145,4 +149,27 @@ export async function decideWaitlist(
 
   revalidatePath("/spend");
   revalidatePath("/spend/waitlist");
+}
+
+/** Auto-expires anything still pending 7 days after its 48h unlock (9 days
+ * total from added_at) — there's no cron infrastructure here, so this runs
+ * lazily whenever the waitlist page is viewed, which is the only moment
+ * the expiry actually needs to be reflected anywhere. Called before the
+ * page reads its rows, so a stale "pending" item past its window never
+ * renders as still-waiting. */
+export async function sweepExpiredWaitlist(): Promise<{ error: string } | undefined> {
+  const { supabase, userId } = await requireUser();
+
+  const cutoff = new Date(Date.now() - 9 * 24 * 3_600_000).toISOString();
+
+  const { error } = await supabase
+    .from("wait_list")
+    .update({ decision: "expired", decided_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("decision", "pending")
+    .lte("added_at", cutoff);
+
+  if (error) {
+    return { error: `Sweep failed. ${error.message}` };
+  }
 }

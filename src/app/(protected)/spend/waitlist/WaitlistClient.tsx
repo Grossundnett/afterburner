@@ -9,7 +9,7 @@ export type WaitlistItem = {
   category: string;
   price: number;
   added_at: string;
-  decision: "pending" | "bought" | "dropped";
+  decision: "pending" | "bought" | "expired" | "dropped";
 };
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -35,10 +35,10 @@ export function WaitlistClient({
   savedByWaiting: number;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [decided, setDecided] = useState<Record<string, "bought" | "dropped">>({});
+  const [decided, setDecided] = useState<Record<string, "bought" | "expired">>({});
   const [error, setError] = useState<string | null>(null);
 
-  function handleDecide(id: string, decision: "bought" | "dropped") {
+  function handleDecide(id: string, decision: "bought" | "expired") {
     setError(null);
     startTransition(async () => {
       const result = await decideWaitlist({ id, decision });
@@ -53,6 +53,22 @@ export function WaitlistClient({
   const pending = items.filter((i) => i.decision === "pending" && !decided[i.id]);
   const waiting = pending.filter((i) => hoursLeft(i.added_at) > 0);
   const ready = pending.filter((i) => hoursLeft(i.added_at) === 0);
+
+  // "Don't want it" works at any point — unlocked or not — because there's
+  // no reason to make someone wait 48 hours just to decide against
+  // something. Only Buy is actually gated on the 48h having elapsed.
+  function DontWantIt({ id }: { id: string }) {
+    return (
+      <button
+        type="button"
+        aria-disabled={isPending}
+        onClick={() => handleDecide(id, "expired")}
+        className={`rounded-[10px] border-[1.5px] border-border px-3 py-2 text-[0.85rem] font-bold text-text ${focusRing} aria-disabled:opacity-60`}
+      >
+        Don&apos;t want it
+      </button>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,14 +94,7 @@ export function WaitlistClient({
                 <p className="text-[0.85rem] text-text-muted">{money.format(i.price)}</p>
               </div>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  aria-disabled={isPending}
-                  onClick={() => handleDecide(i.id, "dropped")}
-                  className={`rounded-[10px] border-[1.5px] border-border px-3 py-2 text-[0.85rem] font-bold text-text ${focusRing} aria-disabled:opacity-60`}
-                >
-                  Drop
-                </button>
+                <DontWantIt id={i.id} />
                 <button
                   type="button"
                   aria-disabled={isPending}
@@ -111,8 +120,9 @@ export function WaitlistClient({
               <div>
                 <p className="text-text">{i.item}</p>
                 <p className="text-[0.85rem] text-text-muted">{money.format(i.price)}</p>
+                <p className="text-[0.78rem] text-text-muted">{Math.ceil(hoursLeft(i.added_at))}h until unlocked</p>
               </div>
-              <p className="text-[0.85rem] text-text-muted">{Math.ceil(hoursLeft(i.added_at))}h left</p>
+              <DontWantIt id={i.id} />
             </div>
           ))}
         </div>

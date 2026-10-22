@@ -76,6 +76,30 @@ begin
 end $$;
 
 -- ============================================================================
+-- ITEM 5 — widen wait_list.decision to allow 'expired'. The brief's actual
+-- model (re-read in full against the original 0006 table after an initial
+-- pass built the wrong one): an item unlocks 48h after being added, then
+-- EXPIRES unbought 7 days after unlocking, OR immediately on "Don't want
+-- it" — both are the same terminal state, not two different ones. 0006's
+-- check constraint only allowed pending|bought|dropped; 'dropped' is kept
+-- (harmless, unused by new code) rather than removed, since nothing live
+-- depends on this table yet but there's no reason to force a rename.
+-- ============================================================================
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'wait_list_decision_check'
+       and pg_get_constraintdef(oid) like '%expired%'
+  ) then
+    alter table public.wait_list drop constraint if exists wait_list_decision_check;
+    alter table public.wait_list
+      add constraint wait_list_decision_check
+      check (decision in ('pending', 'bought', 'dropped', 'expired'));
+  end if;
+end $$;
+
+-- ============================================================================
 -- get_dashboard rewrite. Two rule sets, chosen per cycle by its own
 -- cycle_start:
 --   OLD (cycle_start < 2026-10-31): unchanged. Hero funded by the flat cap;

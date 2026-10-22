@@ -24,6 +24,15 @@ real Supabase data. Migration `0016_spend_sprint.sql` must be run by hand
 before any of this goes live. Typecheck, lint and `next build` all pass
 clean as of the last commit on this branch.
 
+**Three real mistakes were found and fixed on a second pass against your
+literal brief** — item 2's hand-calc used the wrong formula, item 5 built
+the wrong decision model, item 8's write-up described a SQL function that
+was never built. See "Corrections made after the first pass" near the end
+of this file for what was wrong and what changed. Nothing else was found
+wrong, but only what the re-read directly called into question was
+re-checked — treat this as "re-audited where flagged," not "every line
+re-verified."
+
 ---
 
 ## Item 1 — balances grant
@@ -35,66 +44,111 @@ casing both ruled out by code/schema audit — a missing table-level GRANT
 alongside a correct RLS policy was the only thing left that could silently
 swallow every insert).
 
+**Checks to run after applying 0016** (literal user id, not `auth.uid()`):
+
+1. Confirm the grant landed:
+   ```sql
+   select grantee, privilege_type
+   from information_schema.role_table_grants
+   where table_name = 'spend_balances' and grantee = 'authenticated';
+   ```
+   Expect 4 rows: `SELECT`, `INSERT`, `UPDATE`, `DELETE`.
+2. On `/spend/plan`, enter a balance for any account and click Update. Expect
+   "Saved" to appear (not an error) and the "last recorded" line under that
+   account to update to the new figure.
+3. Confirm the row actually exists:
+   ```sql
+   select account, amount, snapshot_at
+   from spend_balances
+   where user_id = 'bff03fd3-1687-487a-b9ce-ef26ba1c553c'
+   order by snapshot_at desc
+   limit 5;
+   ```
+   Expect the row just entered, timestamped within the last minute.
+4. Reload `/spend` and confirm `real_money_left` is no longer ₹0 (it may
+   still read low or negative depending on real balances — the test is that
+   it moved off the hardcoded-looking zero, not a specific number).
+
+If step 2 or 3 fails with an actual error message, that message is new
+information — the grant was the only remaining untested theory, so a
+failure here means a fourth cause exists that wasn't visible from code/schema
+inspection alone, and is worth reporting back rather than re-trying the same
+fix.
+
 ---
 
 ## Item 2 — carry-over hand check
 
-**I do not have live query access to the expenses table from this session** —
-no DB tool is wired into this environment, only the Supabase SQL Editor you
-run by hand. So this isn't a result, it's the worked method plus the exact
-query to get the one missing input. Once you have that number, the rest is
-arithmetic you can check with a calculator.
+**CORRECTION, written after the first version of this section shipped:** my
+first pass hand-computed `_spend_week_allowance` as `cap/7 × weight` per day,
+summed over the days in each week. That is **not** what the function does —
+I wrote that from memory instead of reading the actual SQL first, and it's
+wrong. The real function (migration 0012, unchanged since) is a **normalised
+share**:
+
+```sql
+-- public._spend_week_allowance(week_mon, week_sun, cycle_start, cycle_end, cap, weights)
+v_total := sum of weight(day) for EVERY day in [cycle_start, cycle_end]
+v_raw   := sum of weight(day) for days in [week_mon, week_sun] ∩ [cycle_start, cycle_end]
+return cap * v_raw / v_total
+```
+
+So every week's allowance is `cap` scaled by that week's share of the whole
+cycle's weight-mass — the weekly allowances for a full cycle always sum to
+*exactly* `cap`, by construction (the fractions sum to 1). My first draft had
+them summing to ~4.3× the cap, which was visibly wrong and should have been
+caught before it shipped. Corrected below; this also directly answers the
+brief's acceptance check (a) for item 3.
 
 ### The October cycle (OLD rules — unaffected by this sprint)
 
 Cycle: **30 Sep 2026 → 30 Oct 2026** (`cycle_start = 2026-09-30`, before the
-`2026-10-31` new-rules cutoff, so `v_hero_fund = v_cap`).
+`2026-10-31` new-rules cutoff, so `v_hero_fund = v_cap = 30,000`, same as
+before the rename).
 
-Inputs given directly (your message, "ITEM 3 PLAN VALUES"):
-```
-salary            = 100,505
-investments       =  55,000
-savings_target    =  10,000
-big_buy_accrual   =   5,505   (renamed from "buffer" — same column, same number)
-cap = 100505 - 55000 - 10000 - 5505 = 30,000
-```
-Weights: `{"first_two": 0.8, "rest": 1.2}` (the default, and yours per
-`spend_month_plans.week_weights`).
-
-ISO weeks inside the cycle (Mon–Sun, cycle running 30 Sep–30 Oct):
-```
-W1: Mon 28 Sep – Sun  4 Oct   (cycle days 1–4 count:  30 Sep–4 Oct = days 1-5 of cycle*)
-W2: Mon  5 Oct – Sun 11 Oct   (cycle days 6–12)
-W3: Mon 12 Oct – Sun 18 Oct   (cycle days 13–19)
-W4: Mon 19 Oct – Sun 25 Oct   (cycle days 20–26)
-W5: Mon 26 Oct – Sun  1 Nov   (cycle days 27–30, clipped to cycle_end = 30 Oct)
-```
-\* `_spend_week_allowance` clips to `[cycle_start, cycle_end]` before summing
-daily weights, so W1's allowance only counts 30 Sep–4 Oct (5 days), not the
-28th/29th (those belong to the September cycle, already closed out).
-
-`_spend_week_allowance(week_mon, week_sun, cycle_start, cycle_end, cap, weights)`
-sums, for each day actually inside both the week AND the cycle, `cap/7 × weight`
-where weight is 0.8 for cycle-day 1–14, 1.2 for day 15+, then returns that sum.
-Per-day rate = `30000/7 = 4285.71`.
+`v_len = 31` days (Sep 30 – Oct 30 inclusive). Weight is 0.8 for cycle-day
+1–14, 1.2 for day 15+:
 
 ```
-W1 (5 days, all weight 0.8):      5 × 4285.71 × 0.8  =  17,142.86
-W2 (7 days, all weight 0.8):      7 × 4285.71 × 0.8  =  24,000.00
-W3 (7 days — day 13,14 @0.8, day 15-19 @1.2):
-     2 × 4285.71×0.8 + 5 × 4285.71×1.2 = 6,857.14 + 25,714.29 = 32,571.43
-W4 (7 days, all weight 1.2):      7 × 4285.71 × 1.2 =  36,000.00
-W5 (5 days to cycle_end, weight 1.2): 5 × 4285.71×1.2 = 25,714.29
+v_total = 14×0.8 + 17×1.2 = 11.2 + 20.4 = 31.6
 ```
+
+ISO weeks overlapping the cycle, mapped to cycle-day numbers and clipped to
+`[cycle_start, cycle_end]`:
+
+```
+W1: Mon 28 Sep–Sun 4 Oct  → cycle days 1–5  (Sep28/29 excluded, prior cycle)  weight-sum = 5×0.8 = 4.0
+W2: Mon 5 Oct–Sun 11 Oct  → cycle days 6–12                                   weight-sum = 7×0.8 = 5.6
+W3: Mon 12 Oct–Sun 18 Oct → cycle days 13–19 (13,14 @0.8; 15–19 @1.2)        weight-sum = 2×0.8+5×1.2 = 7.6
+W4: Mon 19 Oct–Sun 25 Oct → cycle days 20–26                                  weight-sum = 7×1.2 = 8.4
+W5: Mon 26 Oct–Sun 1 Nov  → cycle days 27–31, clipped to Oct 30 (5 days)     weight-sum = 5×1.2 = 6.0
+                                                                sum check: 4.0+5.6+7.6+8.4+6.0 = 31.6 ✓
+```
+
+```
+v_raw(week) = cap × weight-sum(week) / v_total,  cap = 30,000
+
+W1 = 30000 × 4.0/31.6 =  3,797.47
+W2 = 30000 × 5.6/31.6 =  5,316.46
+W3 = 30000 × 7.6/31.6 =  7,215.19
+W4 = 30000 × 8.4/31.6 =  7,974.68
+W5 = 30000 × 6.0/31.6 =  5,696.20
+                                sum check: 30,000.00 ✓ exactly the cap, as it must
+```
+
+These are the real weekly allowances — a believable ₹3.8k–8k/week against a
+₹30k monthly cap, not the ~₹25k–36k/week my first draft produced.
 
 The carry rule (`_spend_cycle_carry`, unchanged by this sprint for OLD-rules
-cycles): each week, if the running carry is negative, only 30% of that week's
-raw allowance can be eaten by catching up (`effective_in = max(carry, -0.3 *
+cycles): each week, if the running carry is negative, only 30% of that
+week's `v_raw` can be eaten by catching up (`effective_in = max(carry, -0.3 ×
 raw)`); the rest of a deep deficit rolls forward instead of being forced in
 one week. If carry is positive it rolls in fully (surplus isn't capped).
 
-**The one number I can't hand-produce:** actual spend per week. Run this in
-the SQL Editor (literal user id, not `auth.uid()` — no session there):
+**The one number I still can't hand-produce:** actual spend per week — no DB
+query tool is wired into this session, only the Supabase SQL Editor you run
+by hand. Run this (literal user id, never `auth.uid()` — no session in the
+Editor):
 
 ```sql
 select
@@ -108,16 +162,26 @@ order by 1;
 ```
 
 Plug each week's `spent` into the loop above in order (W1 first): starting
-`carry = 0`, for each week compute `effective_in` from the current carry,
-`leftover = carry - effective_in`, then `carry := (raw + effective_in - spent)
-+ leftover`. Whatever `carry` is after the last fully-elapsed week (or
-to-date for the current week) — if negative, that's `month_debt =
--carry`. STATUS.md's last snapshot (13 Oct, 14 days in) had ₹29,558 spent
-against a cap built for ₹32,305 under the old buffer number — that snapshot
-predates this sprint's renamed column and isn't reusable as an input here,
-only as a sanity check that the shape of the arithmetic (spend running close
-to double the flat-cap pace) matches what's in `get_dashboard`'s
-`month_debt` once you run it.
+`carry = 0`, for each week compute `effective_in = max(carry, -0.3 × v_raw)`
+if `carry < 0` else `carry`, `leftover = carry - effective_in`, then
+`carry := (v_raw + effective_in - spent) + leftover`. Whatever `carry` is
+after the last fully-elapsed week (or to-date for the current week) — if
+negative, `month_debt = -carry`. **"Assuming zero further spend" for the
+rest of the cycle just means: for every week after today's, use `spent = 0`
+and keep running the same loop through W5** — the 30%-catchup rule still
+applies to those remaining weeks, so a deep enough deficit can still show
+residual debt at cycle-end even with no more spending, if the remaining
+weeks' allowance isn't enough to absorb it at the capped catch-up rate.
+
+STATUS.md's last snapshot (13 Oct, day 14 of the cycle, partway through W3)
+had ₹29,558 cumulative spend. That's a single cumulative total, not a
+per-week breakdown, so it can't be dropped into the per-week loop above
+without guessing how it splits across W1/W2/partial-W3 — I won't fabricate
+that split. It's usable only as a rough sanity bound: W1+W2+partial-W3's
+allowance-to-date is `3,797+5,316+ (partial W3, 2 of 7 days) ≈ 11,174`
+against `29,558` spent — already deep in deficit by day 14, consistent with
+STATUS's "on pace for double the cap," but not a substitute for the real
+per-week query above.
 
 **This sprint does not change the October cycle's carry arithmetic at all** —
 `v_new_rules := v_cycle_start >= '2026-10-31'` is false for 30 Sep, so
@@ -128,51 +192,68 @@ is the column name feeding `v_cap`, not the number.
 
 Cycle: **31 Oct 2026 → 29 Nov 2026** (`cycle_start = 2026-10-31`, which is
 `>= 2026-10-31`, so `v_new_rules = true` and `v_hero_fund = v_incap_total`,
-NOT the flat cap).
+NOT the flat cap). Plan values from your message ("Plan values from the 31
+Oct cycle"): Food 1,800/wk, Transport 800/wk, late tax 1,500/month, Fun
+3,000, Subscriptions 1,000, Other 4,000, big_buy_accrual 5,505.
 
 ```
+weeks_in_cycle = (29 Nov − 31 Oct + 1) / 7 = 30/7 = 4.285714
+
 v_incap_total = (Food + Transport) × weeks_in_cycle + Fun + Subscriptions + Other + late_tax
+              = (1800 + 800) × 4.285714 + 3000 + 1000 + 4000 + 1500
+              = 2600 × 4.285714 + 9500
+              = 11,142.86 + 9,500
+              = 20,642.86
 ```
 
-You haven't created the November plan row yet (it's a future month — `/spend/plan`
-only lets you edit the cycle that's live or ahead of it once it exists), so I
-can't read its category_budgets. What I do have: STATUS.md confirms **Food's
-weekly budget is ₹1,800** (verified working: "Food ₹1,954 = 1800 ÷ 7 × 7.6").
-Everything else below is shown symbolically — plug your real November numbers
-in once you've saved that plan, the arithmetic doesn't change shape.
+Matches your own estimate of "about 20,600" — good, the formula's right.
 
+`v_len = 30` days (Oct 31 – Nov 29). Weight 0.8 for cycle-day 1–14 (Oct
+31–Nov 13), 1.2 for day 15+ (Nov 14–29):
 ```
-weeks_in_cycle = (29 Nov - 31 Oct + 1) / 7 = 30/7 = 4.2857
-
-v_incap_total = (1800 + Transport) × 4.2857 + Fun + Subscriptions + Other + late_tax
+v_total = 14×0.8 + 16×1.2 = 11.2 + 19.2 = 30.4
 ```
 
-First week of November (`W1: Mon 26 Oct – Sun 1 Nov`, clipped to
-`cycle_start = 31 Oct`, so only **Sat 31 Oct + Sun 1 Nov = 2 days**, both at
-weight 0.8 since cycle-day 1-2 < 15):
-
+First week (`W1: Mon 26 Oct–Sun 1 Nov`, clipped to `cycle_start = 31 Oct`, so
+only **Sat 31 Oct (day 1) + Sun 1 Nov (day 2)** — both weight 0.8):
 ```
-v_raw(W1) = _spend_week_allowance(...) = 2 days × (v_incap_total / 7) × 0.8
-          = v_incap_total × 0.2286
+weight-sum(W1) = 2 × 0.8 = 1.6
+v_raw(W1) = v_incap_total × 1.6/30.4 = 20,642.86 × 0.052632 = 1,086.46
 ```
 
-With Food alone known (1800/week contributing 1800×4.2857 = 7,714.29 to
-`v_incap_total` before the other four terms), the first week's Food-only
-share of that allowance is `7714.29 × 0.2286 = 1,763.56` — i.e. just under
-two days of Food's own weekly rate, which is the sanity check: for a
-2-day week at the discount weight, you'd expect roughly `2/7 × 0.8 ≈ 0.229`
-of a full week's rate, and `0.229 × 1800 = 411.4/day-equivalent... × 4.2857
-weeks` — the arithmetic reduces to the same `0.2286` fraction applied to
-whatever the full in-cap total turns out to be once Transport/Fun/
-Subscriptions/Other/late_tax are in the November plan.
+**First week's hero allowance under the new rules: ₹1,086.46** — a real
+number this time, not a symbolic placeholder.
 
-**Unassigned**, shown on `/spend/plan` (item 3 UI below) = `cap − incap_total`
-— money allocated to the flat formula (salary − investments − savings −
-big_buy_accrual) but not claimed by any category budget. It is explicitly
-*not* spendable via the hero under new rules; it's a decision to go update
-your category budgets, make a deliberate Big Buy accrual bump, or leave it
-idle as an under-the-radar reserve. The dashboard returns it so it's visible,
-not so it's silently folded back into real money left.
+### Item 3's four acceptance checks, from your brief
+
+**(a) "weekly allowances across the 31 Oct–29 Nov cycle sum to the in-cap
+budgets (about 20,600), not 30,000."** True by construction of the corrected
+formula above — any `cap` value passed to `_spend_week_allowance` gets fully
+distributed across the cycle's weeks (the fractions sum to 1), so passing
+`v_incap_total = 20,642.86` as the hero's funding base means the weeks sum to
+**20,642.86**, not 30,000. ✓
+
+**(b) "this week's Food is still 1,954."** `_spend_weekly_rate_budget` (Food
+and Transport's own per-category weekly budget display) is a *different*
+function from `_spend_week_allowance` — I didn't touch it anywhere in 0016.
+With Food = 1,800/wk and a week at weight-sum 7.6 (the day-13-to-19 week
+from the October hand check above — "this week" when you wrote the brief):
+`1800 ÷ 7 × 7.6 = 1,954.29`. Unchanged, because the code computing it is
+unchanged. ✓
+
+**(c) "the October month debt is the same before and after."** True by
+construction — `v_new_rules` is false for `cycle_start = 2026-09-30`, so
+`v_hero_fund := v_cap` exactly, and `v_cap`'s formula
+(`salary − investments − savings_target − big_buy_accrual`) is arithmetically
+identical to the old `salary − investments − savings_target − buffer`; only
+the column name changed. Nothing about October's carry loop reads
+`v_incap_total` at all. ✓
+
+**(d) "Unassigned = 30,000 − (a)."**
+```
+Unassigned = cap − v_incap_total = 30,000 − 20,642.86 = 9,357.14
+```
+Shown on `/spend/plan` once the November plan row exists with these budgets.
 
 ---
 
@@ -228,24 +309,42 @@ not so it's silently folded back into real money left.
 
 ## Item 5 — 48-hour waitlist
 
+**CORRECTION, written after the first version shipped:** my first pass built
+a Buy/Drop model with a `'dropped'` decision and "saved by waiting" summing
+drops. Re-reading the brief literally — "An item expires unbought 7 days
+after unlocking, **or** immediately on 'Don't want it'" — those are two ways
+to reach the **same** terminal state (expired-unbought), not two different
+decisions. There is no separate "dropped" concept in the actual spec. Fixed:
+
+- `wait_list.decision` check constraint widened (0016) to add `'expired'`
+  alongside 0006's original `pending|bought|dropped` (kept `dropped` in the
+  allowed set rather than renaming it away, since nothing live depends on
+  this table yet and there's no reason to force a column-constraint rename
+  beyond what's needed — but all new code writes `'expired'`, never
+  `'dropped'`).
 - Reuses the existing `wait_list` table from migration 0006 (`id, user_id,
-  item, category, price, added_at, decision, decided_at`) — no new table
-  needed, this item is wiring, not schema.
+  item, category, price, added_at, decision, decided_at`) — otherwise no new
+  table needed, this item is wiring, not schema.
 - Gate: any Fun/Subscriptions/Big Buy entry over ₹1,500, or ANY Subscriptions
   entry regardless of amount, routes to "Add to waitlist" instead of "Save"
   on the log form (both buttons shown; waitlisting is offered, not forced,
   since forcing it server-side on `addExpense` would also block legitimate
   corrections/backfills of a past spend already waited out elsewhere).
-- `/spend/waitlist` page: three lists —
-  - **Waiting** (`now() − added_at < 48h`): item, price, countdown
-  - **Ready to decide** (`>= 48h`, `decision` still `'pending'`): Buy / Drop
-    buttons. Buy inserts into `expenses` (spent_on = today, account = Apex)
-    and sets `decision = 'bought'`. Drop just sets `decision = 'dropped'`.
-  - **Saved by waiting**: sum of `price` where `decision = 'dropped'`, all
-    time — the one number that makes waiting feel like it did something.
-- `decision`'s real check constraint (confirmed from 0006, not from my own
-  memory of the spec) is `pending|bought|dropped` — **not** `skipped`. Code
-  below uses `dropped`.
+- `/spend/waitlist` page: two lists —
+  - **Waiting** (`now() − added_at < 48h`): item, price, hours until
+    unlocked, a "Don't want it" button (works immediately — no reason to
+    make someone wait 48h just to decide *against* something)
+  - **Ready to decide** (`>= 48h`): "Don't want it" (→ `expired`) or Buy (→
+    inserts into `expenses`, spent_on = today, account = Apex, then marks
+    `bought`) — Buy alone is refused server-side if 48h genuinely haven't
+    elapsed; "Don't want it" has no time check at either stage.
+  - **Auto-expiry**: `sweepExpiredWaitlist()` runs at the top of the
+    waitlist page's own server render (no cron infra here, so it's lazy —
+    whoever next opens `/spend/waitlist` triggers the sweep, scoped to their
+    own `user_id` only). Marks any still-`pending` row `expired` once
+    `now() − added_at >= 9 days` (48h unlock + 7 days, per the brief).
+  - **Saved by waiting**: sum of `price` where `decision = 'expired'`, all
+    time, regardless of which of the two paths got it there.
 - No GRANT needed on `wait_list` — unlike `spend_balances`, every other
   spend table (`expenses`, `spend_month_plans`) already works today without
   an explicit grant in its migration, which only makes sense if Supabase's
@@ -285,23 +384,29 @@ not so it's silently folded back into real money left.
 ## Item 8 — Sunday weekly review
 
 - `/spend/review`, surfaced as a banner link on `/spend` only on Sundays.
-- Reuses `get_dashboard`'s own `budget_left_this_week` / `spent_this_week` —
-  no new per-week recomputation of the hero logic, since those two numbers
-  are already exactly "this week, under or over, by how much."
-- **Leak of the week**: a new SQL function `get_weekly_leak(p_today date)`
-  (appended to 0016) sums this week's spend per bucket and compares it to a
-  flat per-week share of that bucket's monthly budget (`budget / weeks_in_
-  cycle` for monthly-kind buckets, the bucket's own weekly rate for weekly-
-  kind buckets) — an approximation, not the full day-weighted truth, because
-  "which single bucket hurt most this week" doesn't need day-weighting
-  precision to be useful, and building a second exact replica of
-  `_spend_week_allowance` per-bucket would double the surface area for the
-  exact kind of silent-drift bug this sprint is closing elsewhere.
+- Reuses `get_dashboard`'s own `budget_left_this_week` for the under/over
+  line — no new recomputation of the hero logic for that figure.
+- **Leak of the week and streak are computed in `/spend/review/page.tsx`
+  (TypeScript), not a new SQL function** — no schema change for this item at
+  all, keeping the sprint's "all schema changes in one file" promise simpler
+  than it would be with yet another `0016` function. It queries `expenses`
+  grouped by category per week and compares against a flat per-week share
+  of that bucket's budget (`budget / weeks_in_cycle` for monthly-kind
+  buckets, the bucket's own weekly rate for weekly-kind buckets) — an
+  approximation, not the full day-weighted truth, because "which single
+  bucket hurt most this week" doesn't need day-weighting precision to be
+  useful, and a second exact replica of `_spend_week_allowance` per-bucket
+  would double the surface area for the exact kind of silent-drift bug this
+  sprint is closing elsewhere (see item 2's correction above — that's
+  exactly the mistake a second untested copy of this formula could repeat).
 - **Streak**: consecutive past completed ISO weeks (most recent first, not
   counting the current in-progress week) where total non-Big-Buy spend did
   not exceed that same flat per-week share, stopping at the first losing
-  week or at 12 weeks back, whichever comes first. Also computed in
-  `get_weekly_leak` to avoid a second round trip.
+  week or at 12 weeks back, whichever comes first — computed with one
+  `expenses` query per week looked back, using the CURRENT cycle's budgets
+  even for a week that fell in an earlier cycle (a documented
+  approximation, not a bug: a precise version would need each historical
+  cycle's own plan row, which this doesn't fetch).
 - **One numbered challenge**: a static, deterministic pick keyed off which
   bucket leaked — not generated text, a fixed short list per bucket (e.g.
   Transport leak → "Challenge: wake by 07:00 three days this week — that's
@@ -318,8 +423,102 @@ not so it's silently folded back into real money left.
   live numbers would show stale budgets, which is worse than no PWA at all.
 - `/spend/quick-add`: numeric keypad input (not a bare `<input type=number>`
   — IME/locale quirks on some Android keyboards), six category chips ordered
-  by how often that category was used at this hour-of-day historically (a
-  single `group by category, extract(hour from created_at)` query, ties
-  broken by overall frequency), Apex preselected as account. Submits through
-  the exact same `addExpense` Server Action as the full form — no second
-  write path to keep in sync.
+  by how often that category was used at this hour-of-day historically (from
+  the last 500 spends, no new SQL — computed in `page.tsx`), Apex fixed, not
+  a selector (speed over flexibility, matches "under 5s"). Submits through
+  the exact same `addExpense` Server Action as the full form, so night mode,
+  the waitlist gate and error surfacing all apply exactly as they do on the
+  main form — one write path, not two.
+
+---
+
+## GitHub Action check
+
+`gh workflow list` → **"Keep Supabase awake" — active — id 360162627.**
+Checked once early in the sprint and again just now, re-verifying before
+writing this up rather than trusting memory: same result both times.
+
+---
+
+## Corrections made after the first pass (read this if you're skimming)
+
+Three real mistakes were caught by re-reading this file against your literal
+brief and the actual SQL, rather than trusting my own first draft:
+
+1. **Item 2's hand-calc used the wrong formula** for `_spend_week_allowance`
+   — written from memory instead of from the actual function body. Fixed;
+   see item 2 above for the corrected arithmetic and item 3's four
+   acceptance checks, now with real numbers instead of symbolic
+   placeholders.
+2. **Item 5 built the wrong decision model** — a `Buy/Drop` pair instead of
+   the brief's actual `Buy/expires-unbought` model, where "Don't want it" and
+   the 7-day auto-expiry are two paths to the *same* outcome. Fixed: schema
+   widened, code rewritten, UI relabelled.
+3. **Item 8's write-up claimed a new SQL function that was never built** —
+   the real implementation computes the leak/streak in TypeScript. Fixed to
+   describe what's actually in the diff.
+
+Nothing else in this file was found to be wrong on re-audit, but I only
+re-checked what the re-read brief called into question directly — this
+isn't a claim that everything else was re-verified line by line.
+
+---
+
+## FINAL CHECKLIST — do these in order
+
+1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the
+   Supabase SQL Editor.** It's wrapped in `begin/commit` and idempotent —
+   safe to run even if some part of it partially landed before.
+
+2. **Verify the balances grant** (item 1's checks above, repeated here for
+   the order you asked for):
+   ```sql
+   select grantee, privilege_type
+   from information_schema.role_table_grants
+   where table_name = 'spend_balances' and grantee = 'authenticated';
+   ```
+   Expect 4 rows: `SELECT`, `INSERT`, `UPDATE`, `DELETE`.
+
+3. **Verify the rename landed and the function signatures are singular**
+   (confirms `big_buy_accrual` exists, `buffer` is gone, and the old 6-arg
+   `_spend_cycle_carry` overload didn't survive the `drop function` in 0016):
+   ```sql
+   select column_name from information_schema.columns
+   where table_name = 'spend_month_plans' and column_name in ('buffer', 'big_buy_accrual');
+   -- expect exactly one row: big_buy_accrual
+
+   select pg_get_function_identity_arguments(oid) from pg_proc
+   where proname = '_spend_cycle_carry';
+   -- expect exactly one row, ending in "boolean"
+   ```
+
+4. **Verify `get_dashboard` runs for the October cycle without error** (as
+   the literal user, via the JWT claims trick — no session in the Editor):
+   ```sql
+   begin;
+   select set_config('request.jwt.claims',
+     '{"sub":"bff03fd3-1687-487a-b9ce-ef26ba1c553c","role":"authenticated"}', true);
+   select get_dashboard('2026-10-23');
+   rollback;
+   ```
+   Expect a JSON object with `"new_rules": false` (October is still OLD
+   rules), `"discretionary_cap": 30000` (or whatever your real salary/
+   investments/savings/big_buy_accrual currently are), and no SQL error.
+
+5. **Enter a real balance on `/spend/plan`** and confirm it saves (item 1,
+   check 2 above) and `real_money_left` on `/spend` moves off ₹0.
+
+6. **Create the November plan row** on `/spend/plan` before the 31st, using
+   the budgets from item 2/3's hand check if they're still accurate (Food
+   1800/wk, Transport 800/wk, late tax 1500, Fun 3000, Subscriptions 1000,
+   Other 4000, big_buy_accrual 5505) or your real updated numbers. Once
+   saved, confirm `get_dashboard('2026-10-31')` returns `"new_rules": true`,
+   `"incap_total"` close to **20,642.86**, and `"unassigned"` close to
+   **9,357.14** (exact figures depend on whatever you actually enter).
+
+7. **Click through the rest of item 9's test plan** already in the PR
+   description (Monday transfer card, a real 48-hour waitlist round trip,
+   installing `/spend/quick-add`).
+
+8. **Merge the PR** (`spend-sprint` → `main`) once 1–7 look right. It's
+   already open, not yet merged: https://github.com/Grossundnett/afterburner/pull/1

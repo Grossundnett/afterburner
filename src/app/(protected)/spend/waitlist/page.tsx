@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient, getClaims } from "@/lib/supabase/server";
+import { sweepExpiredWaitlist } from "./actions";
 import { WaitlistClient, type WaitlistItem } from "./WaitlistClient";
 
 export default async function WaitlistPage() {
@@ -13,6 +14,11 @@ export default async function WaitlistPage() {
       </main>
     );
   }
+
+  // No cron here — anything 7 days past its 48h unlock expires lazily,
+  // right before this page reads its own rows, so a stale "pending" item
+  // never renders as still-waiting.
+  await sweepExpiredWaitlist();
 
   const supabase = await createClient();
 
@@ -28,11 +34,11 @@ export default async function WaitlistPage() {
     category: r.category,
     price: Number(r.price),
     added_at: r.added_at,
-    decision: r.decision as "pending" | "bought" | "dropped",
+    decision: r.decision as "pending" | "bought" | "expired" | "dropped",
   }));
 
   const savedByWaiting = items
-    .filter((i) => i.decision === "dropped")
+    .filter((i) => i.decision === "expired")
     .reduce((sum, i) => sum + i.price, 0);
 
   return (
