@@ -1,6 +1,8 @@
 # Afterburner — Project Status & Handover
 
-Last updated: 13 October 2026
+Last updated: 23 October 2026 — end of the `spend-sprint` branch, PR open to
+main, not yet merged or run. Migration `0016_spend_sprint.sql` has NOT been
+run in Supabase yet — do that by hand before merging, then redeploy.
 
 Live at `afterburner-two.vercel.app` · repo `Grossundnett/afterburner` (private)
 Supabase project ref `ijnemkslclmpjhewydkk`, region Mumbai (ap-south-1)
@@ -10,58 +12,22 @@ My Supabase user id: `bff03fd3-1687-487a-b9ce-ef26ba1c553c`
 
 ---
 
-## 1. RIGHT NOW — the open bug
+## 1. RIGHT NOW — balances grant shipped, not yet verified live
 
-**Balances on `/spend/plan` never save.** `spend_balances` has zero rows for
-every user, even after re-entering post-fix. This is the one thing blocking the
-spend page from showing true numbers — the hero reads ₹0 because
-`real_money_left` is 0.
+**Balances on `/spend/plan` never saved**, as of the last session. Comma
+parsing, column names and casing were all ruled out by code/schema audit (see
+git history on `spend-sprint` and `SPRINT_NOTES.md` item 1 for the full
+trail) — the one remaining untested theory was a missing table-level `GRANT`
+alongside an otherwise-correct RLS policy. `0016_spend_sprint.sql` adds
+`grant select, insert, update, delete on spend_balances to authenticated`.
 
-**Ruled out:**
-- Comma parsing — fixed in `a00a861`; the plan's top fields now save correctly
-- RLS — policy `own spend_balances` covers ALL with
-  `with_check ((select auth.uid()) = user_id)`. Correct.
-- Wrong account — table is empty for every user
-- **Column-name mismatch** — ruled out. Live columns confirmed via
-  `information_schema.columns`: `id, user_id, account, amount, snapshot_at,
-  created_at`. No `updated_at` anywhere; `recordBalance`'s insert only ever
-  writes `user_id, account, amount`, all three real. The "original spec said
-  updated_at" note was wrong or described an earlier draft, not shipped code.
-- **Casing mismatch** — ruled out by direct code audit (not by a screen
-  result — none was captured). Searched every place an account string is
-  produced: four independent `const ACCOUNTS = ["Apex", "BOB", "Cash"]`
-  declarations (now consolidated into `src/lib/accounts.ts`), all
-  byte-identical. The balance form is three fixed buttons rendered from that
-  array — nothing free-types or lowercases the value before it reaches
-  `recordBalance`. The live constraint (`account = ANY
-  (ARRAY['Apex','BOB','Cash'])`) matches exactly.
-
-**Hardened regardless of cause (`6a59de9`):** every write in
-`spend/actions.ts` and `spend/plan/actions.ts` now chains `.select()` and
-treats "no error, but no row" as a failure in its own right — a write that
-reports success but persists nothing was previously invisible.
-
-**Still unknown — no further static-analysis theory survives.** The two
-most plausible code bugs are both ruled out. Next diagnostic needed, in
-order of how much it would tell us:
-1. **What literally appears on screen** after clicking Update on the latest
-   deploy — "Saved", a specific error string, or neither. This was asked for
-   once and not captured ("`<WHAT I SAW>`" was left blank in the last report).
-2. **Confirm the live deployment is actually `6a59de9` or later** (Vercel
-   dashboard → Deployments → check the commit SHA) — the balances bug may
-   have been tested against a deploy that predates the comma-parsing fix.
-3. If (1) shows a real error: paste the exact text, it'll point straight at
-   the cause (permission denied → a missing `GRANT` on the table to the
-   `authenticated` role, the one remaining untested theory; a Postgres
-   constraint name → something not visible in the constraint list already
-   checked).
-4. If (1) shows "Saved" / no error at all even post-`6a59de9`: that's new
-   information the hardening should have made impossible — report it as its
-   own finding, not as confirmation balances are broken the same way.
-
-**Then:** make `recordBalance`'s insert match the real columns, and make every
-save action surface errors instead of swallowing them. Three rounds have been
-lost to silent failures.
+**This is not yet confirmed fixed** — the migration hasn't been run in
+Supabase yet (see the banner at the top of this file). Once it's run: enter a
+balance on `/spend/plan`, confirm it saves, and confirm `real_money_left` on
+`/spend` stops reading ₹0. If it still fails after the grant, every write
+already chains `.select()` and surfaces "no row returned" as its own error
+(from a prior session's hardening), so whatever shows next time is new
+information, not a repeat of a theory already ruled out.
 
 ---
 
@@ -110,28 +76,52 @@ number, targeted friction on the two leaks, and no charts above the fold.
 
 ### What exists
 - `get_dashboard(p_today date)` — one RPC, security invoker, carry-over
-  recomputed live from history so it can't drift
-- Home: hero → move card → six bars sorted by overspend (pace tick, amber ahead,
-  red overflow past 100% with "+₹X over") → month strip → quick add
-- `/spend/plan` — salary, investments, savings, buffer, weekly Food/Transport/late
-  tax, monthly Fun/Subscriptions/Big Buy/Other, balance snapshots. All budgets
-  in one place.
+  recomputed live from history so it can't drift. As of `0016`, splits OLD
+  rules (cycles before 31 Oct 2026 — hero funded by the flat cap, unchanged)
+  from NEW rules (31 Oct 2026 on — hero funded by in-cap category budgets
+  only; Big Buy becomes a sinking fund, excluded from spend totals)
+- Home: hero → Monday transfer card (Mondays only, until ticked) → this
+  week's move → six bars sorted by overspend (Big Buy renders as a fund,
+  "available" not "over budget") → emotion footnote (after 4 weeks of any
+  tagged Fun/Big Buy entries) → month strip → Sunday-only review link →
+  quick add, with a pre-submit waitlist/night-mode interrupt on qualifying
+  entries
+- `/spend/plan` — salary, investments, savings, Big Buy accrual (renamed
+  from "buffer"), weekly Food/Transport/late tax, monthly Fun/Subscriptions/
+  Big Buy/Other, Unassigned line (new-rules cycles only), balance snapshots
+- `/spend/waitlist` — 48-hour pause on Subscriptions (any amount) and
+  Fun/Big Buy over ₹1,500; Buy/Drop enforced server-side on real elapsed
+  time, not just hidden buttons; "saved by waiting" total
+- `/spend/review` — Sunday weekly review: under/over, leak of the week
+  (flat per-week share, not a second day-weighted calc — see
+  `SPRINT_NOTES.md` item 8), a fixed challenge keyed by the leak bucket,
+  streak of weeks under
+- `/spend/quick-add` — installable PWA entry point (`manifest.ts` +
+  network-only `sw.js`), numeric keypad, six chips ranked by hour-of-day
+  usage, Apex fixed, same `addExpense` action as the full form
 - `/spend/import` — Wallet CSV by upload or paste; dedupe on
   `(source_ts, account)`; ghost-row detection; ongoing reconciliation check
-- Account picker on the log form
+- Account picker on the log form; emotion picker on Fun/Big Buy entries
 
-### Verified working
+### Verified working (pre-sprint, OLD-rules numbers — still true, unchanged
+by this sprint for any cycle before 31 Oct 2026)
 - Cap reads ₹32,305 (₹1,00,505 − ₹55,000 − ₹10,000 − ₹3,200)
 - Overflow renders past 100%
 - Day-weighting correct (Food ₹1,954 = 1800 ÷ 7 × 7.6)
 - `cycle_end` correct (2026-10-30)
 - Late tax tracked and shown over
 
-### Still to build (from SPEND_RESEARCH.md)
-- **Phase 2:** quick-add PWA — amount first, six chips by time of day, under 5 s
-- **Phase 3:** 48-hour waitlist (>₹1,500 and every subscription), night mode
-  22:00–06:00, emotion tags on Fun/Big Buy, late-tax counter with if-then plan
-- **Phase 4:** Sunday 3-minute weekly review with a streak
+### Not yet run live / not yet verified
+- **Migration `0016_spend_sprint.sql` hasn't been run in Supabase.** Nothing
+  in this section is live until it is.
+- Everything built this sprint (items 1–9, `SPRINT_NOTES.md` has the full
+  list) is unverified against real data — typechecked, linted and built
+  clean, but not exercised in the browser against a live database. First
+  things to actually click through after running the migration: balances
+  save (§1), the November-cycle hero once that plan exists, the Monday
+  transfer card, and one real 48-hour waitlist round trip.
+- No real app icon for the PWA manifest — placeholder `favicon.ico`
+  reference, flagged in `SPRINT_NOTES.md` item 9.
 
 ### Phase 0 — outside the app (do once, highest value)
 Require authentication for all Play/App Store purchases · remove saved cards from
@@ -146,14 +136,20 @@ apps off the home screen.
 0006 spend v2 · 0007 category groups · 0008 Dating/Guilty into Software, Health
 merged · 0009 Business trips → Life & Ent · 0010 six categories · 0011 balances ·
 0012 get_dashboard · 0013 cycle total · 0014 dashboard fixes · 0015 remove debug
-fields
+fields · **0016 spend sprint — NOT YET RUN** (balances grant, buffer →
+big_buy_accrual rename, spend_transfers table, emotion column, get_dashboard
+old/new-rules rewrite — run this one by hand before merging `spend-sprint`)
 
 ---
 
-## 5. Financial position (pay cycle 30 Sept – 30 Oct)
+## 5. Financial position (pay cycle 30 Sept – 30 Oct — OLD rules, last one)
+
+Snapshot from 13 October, not re-pulled this sprint (no live DB query access
+in this session — see `SPRINT_NOTES.md` item 2 for what that limited):
 
 - Salary ₹1,00,505 · investments ₹55,000 · savings ₹10,000 (separate account,
-  untouched) · discretionary cap ₹32,305
+  untouched) · discretionary cap ₹32,305 (pre-sprint buffer figure — now
+  called `big_buy_accrual`, same number)
 - **Spent ₹29,558 in 14 days — on pace for ₹65,451, double the cap**
 - **Subscriptions ₹13,295 against ₹1,000.** Most on payday night, 30 Sept:
   ₹5,758.98 noted "Yep that's pure", ₹1,999 Claude Pro, two Hinge charges
@@ -164,6 +160,12 @@ fields
 The two leaks the research targets are exactly these: late-night subscriptions,
 and lateness costing money via bike taxis. Both trace back to the 07:00 wake
 target the fitness side tracks.
+
+**31 October 2026 is the first NEW-rules cycle** — the one where Big Buy
+stops being a category budget and starts being a sinking fund, and the hero
+switches to being funded by in-cap category budgets instead of the flat cap.
+That plan row doesn't exist yet; create it on `/spend/plan` before the 31st
+so the cycle has a budget from day one.
 
 ---
 
@@ -222,4 +224,6 @@ and, via bike taxis, money.
 
 `AGENTS.md` (rules for Claude Code) · `ARCHITECTURE.md` (fitness spec) ·
 `RESEARCH.md` (dashboard design research) · `SPEND_RESEARCH.md` (spend source of
-truth) · `PHASE2.md` (fitness backlog) · `STATUS.md` (this file)
+truth) · `PHASE2.md` (fitness backlog) · `STATUS_latest.md` (this file) ·
+`SPRINT_NOTES.md` (decision log for the `spend-sprint` branch — every sketch,
+hand calculation and simplification made while building items 1–9)

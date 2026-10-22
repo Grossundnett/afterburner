@@ -3,6 +3,27 @@
 Branch `spend-sprint`. One section per item, written as the work happened —
 this is the record of what was decided and why, not a retrospective summary.
 
+## Checklist
+
+- [x] 1. Balances grant (`spend_balances` GRANT in 0016)
+- [x] 2. Carry-over hand check (October worked method; one input needs a
+      live query — see the section below)
+- [x] 3. Big Buy sinking fund (`big_buy_accrual` rename, new/old rules split,
+      Unassigned line, fund-kind bar)
+- [x] 4. Monday transfer card (`spend_transfers` table, tick action)
+- [x] 5. 48-hour waitlist (`/spend/waitlist`, server-enforced 48h)
+- [x] 6. Night mode (22:00–06:00 IST prompt, shares UI with item 5)
+- [x] 7. Emotion tags (picker + 4-week percentage footnote)
+- [x] 8. Sunday weekly review (`/spend/review`)
+- [x] 9. PWA quick-add (manifest, service worker, `/spend/quick-add`)
+
+Every item above is committed and pushed to `spend-sprint`. **None of it has
+been run against a live database or clicked through in a browser** — this
+session had no DB query access and no way to launch the dev server against
+real Supabase data. Migration `0016_spend_sprint.sql` must be run by hand
+before any of this goes live. Typecheck, lint and `next build` all pass
+clean as of the last commit on this branch.
+
 ---
 
 ## Item 1 — balances grant
