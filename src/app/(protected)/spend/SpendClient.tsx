@@ -538,6 +538,7 @@ export function SpendClient({
   // --- Hero ----------------------------------------------------------------
   const currentWeekSun = addDays(currentWeekMon, 6);
   const daysLeftInWeek = daysBetween(today, currentWeekSun) + 1;
+  const isSunday = today === currentWeekSun;
 
   return (
     <div className="flex flex-col gap-7">
@@ -592,6 +593,15 @@ export function SpendClient({
             );
           })()}
         </div>
+      )}
+
+      {dashboard.has_plan && isSunday && (
+        <Link
+          href="/spend/review"
+          className={`self-start font-bold text-accent underline underline-offset-4 ${focusRing}`}
+        >
+          This week&apos;s review →
+        </Link>
       )}
 
       {/* Monday transfer reminder — only on Monday, only until ticked for
