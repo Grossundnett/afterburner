@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { todayIn, cycleMonth } from "@/lib/dates";
+import { todayIn, cycleMonth, weekStart } from "@/lib/dates";
 import { ACCOUNTS } from "@/lib/accounts";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
@@ -214,6 +214,37 @@ export async function coverOverspend(input: {
   }
   if (!data || data.length === 0) {
     return { error: "Budget not moved — the database accepted no error but returned no row." };
+  }
+
+  revalidatePath("/spend");
+}
+
+/** Ticks this week's Monday-transfer reminder. A row's existence IS the
+ * ticked state — no boolean column, so ticking twice is just the same
+ * upsert twice, never an error. Keyed off the server's own idea of today
+ * (via the profile timezone), never a client-supplied week, so a stale tab
+ * can't tick next week's row early. */
+export async function tickTransfer() {
+  const { supabase, userId } = await requireUser();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("timezone")
+    .eq("id", userId)
+    .maybeSingle();
+  const today = todayIn(profile?.timezone ?? "UTC");
+  const weekMon = weekStart(today);
+
+  const { data, error } = await supabase
+    .from("spend_transfers")
+    .upsert({ user_id: userId, week_mon: weekMon }, { onConflict: "user_id,week_mon" })
+    .select();
+
+  if (error) {
+    return { error: `Not saved. ${error.message}` };
+  }
+  if (!data || data.length === 0) {
+    return { error: "Not saved — the database accepted no error but returned no row." };
   }
 
   revalidatePath("/spend");

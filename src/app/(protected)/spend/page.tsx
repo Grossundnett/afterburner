@@ -47,7 +47,7 @@ export default async function SpendPage({
   // rather than eight separate queries.
   const historyStart = addDays(weekMon, -49);
 
-  const [{ data: dashboard }, { data: weekRows }, { data: history }, { data: catRows }] =
+  const [{ data: dashboard }, { data: weekRows }, { data: history }, { data: catRows }, { data: transferRow }] =
     await Promise.all([
       supabase.rpc("get_dashboard", { p_today: today }),
       supabase
@@ -68,6 +68,12 @@ export default async function SpendPage({
         .select("key, label, emoji, kind, sort, group, subgroup")
         .eq("user_id", userId)
         .order("sort", { ascending: true }),
+      supabase
+        .from("spend_transfers")
+        .select("week_mon")
+        .eq("user_id", userId)
+        .eq("week_mon", currentWeekMon)
+        .maybeSingle(),
     ]);
 
   const weekTotals = Array.from({ length: 8 }, (_, i) => {
@@ -109,6 +115,8 @@ export default async function SpendPage({
           weekTotals={weekTotals}
           categories={categories}
           dashboard={dashboard as Dashboard}
+          isMonday={today === currentWeekMon}
+          transferTicked={transferRow != null}
         />
       </div>
     </main>

@@ -14,7 +14,7 @@ import { addDays, daysBetween } from "@/lib/dates";
 import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
 
-import { addExpense, coverOverspend, deleteExpense } from "./actions";
+import { addExpense, coverOverspend, deleteExpense, tickTransfer } from "./actions";
 
 export type SpendCategory = {
   key: string;
@@ -76,6 +76,8 @@ type Props = {
   weekTotals: { mon: string; total: number }[];
   categories: SpendCategory[];
   dashboard: Dashboard;
+  isMonday: boolean;
+  transferTicked: boolean;
 };
 
 const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
@@ -237,6 +239,8 @@ export function SpendClient({
   weekTotals,
   categories,
   dashboard,
+  isMonday,
+  transferTicked,
 }: Props) {
   const pillCats = categories.slice(0, 8);
   const moreCats = categories.slice(8);
@@ -249,6 +253,20 @@ export function SpendClient({
   const [formError, setFormError] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [moveDone, setMoveDone] = useState(false);
+  const [ticked, setTicked] = useState(transferTicked);
+  const [tickError, setTickError] = useState<string | null>(null);
+
+  function handleTickTransfer() {
+    setTickError(null);
+    setTicked(true); // optimistic — reverted below on failure
+    startTransition(async () => {
+      const result = await tickTransfer();
+      if (result?.error) {
+        setTickError(result.error);
+        setTicked(false);
+      }
+    });
+  }
 
   const weekSun = addDays(weekMon, 6);
   const isCurrentWeek = weekMon === currentWeekMon;
@@ -499,6 +517,33 @@ export function SpendClient({
               </>
             );
           })()}
+        </div>
+      )}
+
+      {/* Monday transfer reminder — only on Monday, only until ticked for
+          this ISO week. Disappears Tuesday regardless of tick state; it's
+          targeted friction on habit formation, not a standing nag. */}
+      {dashboard.has_plan && isMonday && !ticked && (
+        <div className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-border bg-surface p-4">
+          <p className="text-text">
+            Transfer{" "}
+            <strong>
+              {money.format(
+                dashboard.binding === "cash"
+                  ? dashboard.cash_left_this_week
+                  : dashboard.budget_left_this_week,
+              )}
+            </strong>{" "}
+            to Apex.
+          </p>
+          {tickError ? <p className="text-[0.85rem] text-over">{tickError}</p> : null}
+          <button
+            type="button"
+            onClick={handleTickTransfer}
+            className={`self-start rounded-[10px] bg-accent px-4 py-2 font-bold text-accent-ink ${focusRing}`}
+          >
+            Done
+          </button>
         </div>
       )}
 
