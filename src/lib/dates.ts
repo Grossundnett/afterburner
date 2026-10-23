@@ -146,6 +146,22 @@ export function cycleMonth(iso: string): string {
  * `get_dashboard()`'s SQL exactly — same derivation, just run backwards from
  * the plan row's month instead of forwards from today's date.
  */
+/**
+ * Mom's rule's total day-weight mass for a cycle: 0.8/day for cycle-day
+ * 1-14, 1.2/day from day 15 on. This is NOT the same as `len / 7` (plain
+ * calendar weeks) — it's the same v_total `_spend_week_allowance` divides by
+ * in SQL, and every weekly category's own budget bar is scaled by a week's
+ * share of this mass (`_spend_weekly_rate_budget`). A cycle total for a
+ * weekly-rate category must use this same mass, or "Unassigned" would not
+ * equal cap minus what the weekly bars actually add up to over the cycle.
+ */
+export function cycleWeightTotal(start: string, end: string): number {
+  const len = daysBetween(start, end) + 1;
+  const first = Math.min(len, 14);
+  const rest = Math.max(len - 14, 0);
+  return first * 0.8 + rest * 1.2;
+}
+
 export function cycleBoundsForMonth(month: string): { start: string; end: string } {
   const [year, mon] = month.split("-").map(Number);
   const start = new Date(Date.UTC(year, mon - 1, 0)); // day 0 of `mon` = last day of mon-1

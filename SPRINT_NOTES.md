@@ -464,6 +464,149 @@ isn't a claim that everything else was re-verified line by line.
 
 ---
 
+## FINAL ROUND — chunk A (blocking fixes)
+
+### A1 — balances still not saving
+
+Re-audited `recordBalance` (plan/actions.ts), the RLS policy (0011), and the
+`PlanClient` wiring end to end. **The Update button was never inside a
+`<form>` and was never nested in the plan-save form** — `BalancesCard` is a
+sibling rendered after the plan `</form>` closes, and its button is
+`type="button"` with a direct `onClick={() => save(account)}`. Nested forms,
+a wrong action binding and a bad button type were all ruled out by reading
+the actual JSX, not assumed.
+
+The grant from 0016 is real and landed (idempotent, harmless either way),
+but per item 5's own earlier note every other spend table already worked
+without an explicit grant — Supabase's default privileges likely already
+covered `spend_balances` too, so the grant may not have been the true fix,
+consistent with your report that rows are still at zero after it ran.
+
+**What changed this round, since a 4th cause can't be found by reading code
+alone without DB access:**
+- `recordBalance` now returns the saved row's `account`, `amount`,
+  `snapshot_at` on success (previously returned nothing), and
+  `console.error`s both failure modes (Postgres error, and "no error but no
+  row") server-side so they show in Vercel's function logs.
+- The Update button now shows **"Saved Apex ₹5,000 at 14:32"** (built from
+  the row the database actually returned, not an optimistic guess) instead
+  of a bare "Saved" label.
+
+**3-step test:**
+1. On `/spend/plan`, type an amount for Apex, click Update.
+2. Expect either `Saved Apex ₹X at HH:MM` directly under the row, or the
+   full error text in red. If this still shows nothing at all (button does
+   nothing, no text changes), that's new information — the click isn't
+   reaching `save()`, which nothing in this codebase explains; check the
+   browser console for a JS error instead.
+3. Confirm the row exists:
+   ```sql
+   select account, amount, snapshot_at
+   from spend_balances
+   where user_id = 'bff03fd3-1687-487a-b9ce-ef26ba1c553c'
+   order by snapshot_at desc
+   limit 5;
+   ```
+   If step 2 showed a confirmation but this query comes back empty, or
+   shows an error message that isn't "RLS"/"grant"-shaped, paste it back —
+   that's the real 4th cause this session couldn't reach without DB access.
+
+### A2 — Unassigned, and the day-weighted formula correction
+
+`/spend/plan` was showing "Allocated (weekly × 4 + monthly)" / "Room left to
+allocate" always, and a separate "Unassigned" line only for new-rules
+cycles (Nov 2026 on) — both removed, replaced by a single **Unassigned**
+line shown for every cycle.
+
+**A real formula bug, not just a missing feature:** both `get_dashboard`'s
+SQL (0016) and `PlanClient`'s own live preview computed Food/Transport's
+contribution to the cycle total as `weeklyRate × (cycle_len / 7)` — plain
+calendar weeks. But every week's own Food/Transport budget bar
+(`_spend_weekly_rate_budget`) scales that same weekly rate by **that week's
+share of Mom's rule's day-weight mass** (0.8/day for cycle-day 1-14, 1.2/day
+after) via `_spend_week_allowance`'s same v_total. Summed across a whole
+cycle, the real weekly bars add up to `weeklyRate / 7 × weight_mass`, not
+`weeklyRate × plain_weeks` — a different number whenever weight_mass ≠
+plain_weeks × 7 (true for any cycle with a mix of 0.8 and 1.2 days, i.e.
+every real cycle). Confirmed against your hand check:
+- October (len 31, weight_mass = 14×0.8 + 17×1.2 = **31.6**): Food
+  contribution = 1800/7 × 31.6 = **8,125.7 ≈ 8,126** ✓. Transport = 800/7 ×
+  31.6 = **3,611.4 ≈ 3,611** ✓. (The old plain-weeks formula would have
+  given 1800 × 31/7 = 7,971 and 800 × 31/7 = 3,543 — visibly different,
+  confirming the old formula was wrong, not just differently rounded.)
+- November (len 30, weight_mass = 14×0.8 + 16×1.2 = **30.4**): Food =
+  1800/7 × 30.4 = **7,817.1 ≈ 7,817** ✓. Transport = 800/7 × 30.4 =
+  **3,474.3 ≈ 3,474** ✓.
+
+I could not independently verify the full Unassigned totals (6,568 /
+10,709) against your real October/November `category_budgets` — this
+session has no DB query access, so "flat 14,000" (Oct) / "flat 8,000" (Nov)
+are taken on trust as whatever Fun+Subscriptions+Other+late-tax actually
+sum to in your real plan rows, not re-derived here. The formula is what's
+fixed; run `get_dashboard` after 0017 (checklist below) and compare.
+
+**Late tax confirmed nested in Transport, not added on top, in the sense
+that matters:** the six-bar UI (`SpendClient`'s `BudgetBar`) shows late tax
+as a `sub` line *inside* Transport's own bar, never a 7th bar. For the
+Unassigned/incap_total arithmetic, late tax is still its own additive term
+(`+ v_late`), same as Fun/Subscriptions/Other — it is counted exactly once,
+just like every other budget line; "nested" describes the display grouping,
+not a different arithmetic treatment. Nothing changed here, confirmed by
+reading `BudgetBar`'s `sub` prop and `get_dashboard`'s `v_late` term.
+
+**Schema change — `supabase/migrations/0017_final.sql` — not yet run.**
+Rewrites `get_dashboard` (`CREATE OR REPLACE`, same signature, idempotent)
+to use the corrected weight-mass formula for `incap_total`/`unassigned`,
+computed for every cycle now (old rules previously left `incap_total` at 0,
+so `unassigned` silently read as the full cap — also fixed). **Old-rules
+hero funding is unchanged** — `v_hero_fund` still reads the flat cap for
+cycles before 31 Oct 2026; only new-rules cycles (Nov 2026 on) fund the hero
+from the now-corrected `incap_total`, which changes the November hero
+number slightly from the placeholder calc two sessions ago (that number was
+never live — no plan row existed yet).
+
+**Run this, then verify:**
+```sql
+begin;
+select set_config('request.jwt.claims',
+  '{"sub":"bff03fd3-1687-487a-b9ce-ef26ba1c553c","role":"authenticated"}', true);
+select get_dashboard('2026-10-23');  -- October, OLD rules
+rollback;
+```
+Expect `"new_rules": false` and `"unassigned"` now a real number (not equal
+to the full `discretionary_cap`, unless your October plan genuinely has no
+category budgets at all).
+```sql
+begin;
+select set_config('request.jwt.claims',
+  '{"sub":"bff03fd3-1687-487a-b9ce-ef26ba1c553c","role":"authenticated"}', true);
+select get_dashboard('2026-10-31');  -- November, NEW rules, once that plan row exists
+rollback;
+```
+Expect `"new_rules": true` and `"incap_total"` to match the weighted hand
+check above for whatever your real Food/Transport/Fun/Subscriptions/Other/
+late-tax numbers are.
+
+### A3 — Big Buy fund ignores pre-cycles, confirmed
+
+Already correct, no code change. The accrual loop in `get_dashboard`
+(0016, unchanged by 0017) is:
+```sql
+for v_row in
+  select month, big_buy_accrual from spend_month_plans
+   where user_id = v_user and month >= '2026-11'
+loop
+```
+The `month >= '2026-11'` filter means October's plan row (`month = '2026-10'`,
+holding the old ₹3,200 buffer figure) is never selected into this loop at
+all — it can't contribute to `v_accrued` regardless of `p_today`. The fund
+only ever sums `big_buy_accrual` from November 2026 plan rows onward, and
+only once each one's own cycle has started (`v_row_cycle_start <= p_today`).
+October's old buffer number is structurally unreachable here, not just
+zero by coincidence.
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the

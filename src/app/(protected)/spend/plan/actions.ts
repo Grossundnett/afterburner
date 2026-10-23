@@ -78,7 +78,10 @@ export type RecordBalanceInput = z.input<typeof recordBalanceSchema>;
  * account, so history stays intact for later auditing. */
 export async function recordBalance(
   input: RecordBalanceInput,
-): Promise<{ error: string } | undefined> {
+): Promise<
+  | { error: string; account?: undefined; amount?: undefined; snapshot_at?: undefined }
+  | { error: null; account: string; amount: number; snapshot_at: string }
+> {
   const { supabase, userId } = await requireUser();
 
   const parsed = recordBalanceSchema.safeParse(input);
@@ -93,14 +96,20 @@ export async function recordBalance(
       account: parsed.data.account,
       amount: parsed.data.amount,
     })
-    .select();
+    .select("account, amount, snapshot_at");
 
   if (error) {
+    console.error(`[recordBalance] ${parsed.data.account} ${parsed.data.amount}:`, error);
     return { error: `Balance not saved. ${error.message}` };
   }
-  if (!data || data.length === 0) {
+  const row = data?.[0];
+  if (!row) {
+    console.error(
+      `[recordBalance] ${parsed.data.account} ${parsed.data.amount}: insert returned no row and no error.`,
+    );
     return { error: "Balance not saved — the database accepted no error but returned no row." };
   }
+  return { error: null, account: row.account, amount: Number(row.amount), snapshot_at: row.snapshot_at };
 }
 
 export async function setCountBobAsCash(

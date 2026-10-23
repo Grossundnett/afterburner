@@ -3,10 +3,8 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
-import { cycleBoundsForMonth, daysBetween } from "@/lib/dates";
+import { cycleBoundsForMonth, cycleWeightTotal } from "@/lib/dates";
 import { saveMonthPlan, recordBalance, setCountBobAsCash } from "./actions";
-
-const NEW_RULES_START = "2026-10-31";
 
 export type PlanGroup = {
   group: string;
@@ -102,33 +100,31 @@ export function PlanClient({
   });
 
   const n = parseMoney;
-  const sumWeeklyPerWeek = weeklyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
-  const sumWeeklyMonthly = sumWeeklyPerWeek * 4;
-  const sumMonthly = monthlyGroups.reduce((s, g) => s + n(groupBudgets[g.group] ?? ""), 0);
-  const allocated = sumMonthly + sumWeeklyMonthly;
 
   // The discretionary cap is what funds the day-weighted allowance in
   // get_dashboard() — it's salary minus the automatic sweeps only. The six
   // bucket budgets are a separate, advisory split of that cap; they don't
-  // subtract from it, so "allocated" vs "cap" is a check, not an identity.
+  // subtract from it, so "Unassigned" is a check, not an identity.
   const discretionaryCap = n(salary) - n(investments) - n(savingsTarget) - n(bigBuyAccrual);
 
-  // New-rules cycles (31 Oct 2026 on) fund the hero from in-cap category
-  // budgets only, not the flat cap — see get_dashboard() and SPRINT_NOTES.md
-  // item 3. "Unassigned" surfaces the gap so it's a visible decision
-  // (raise a budget, bump the accrual, or leave it idle) rather than money
-  // that silently falls out of both the hero and the fund.
+  // "Unassigned" is cap minus what the six category budgets actually add up
+  // to over the whole cycle. Food/Transport are weekly rates, and every
+  // week's own Food/Transport bar is scaled by that week's share of Mom's
+  // rule's day-weight mass (_spend_weekly_rate_budget) — so their cycle
+  // total is weeklyRate/7 × the cycle's whole weight mass, NOT
+  // weeklyRate × plain calendar weeks. Using plain weeks here would make
+  // this number disagree with what the weekly bars actually show over the
+  // month. Late tax is its own line (nested under Transport for display,
+  // not inside Transport's own weekly rate), added once like Fun/Subs/Other.
   const { start: cycleStart, end: cycleEnd } = cycleBoundsForMonth(month);
-  const isNewRules = cycleStart >= NEW_RULES_START;
-  const weeksInCycle = (daysBetween(cycleStart, cycleEnd) + 1) / 7;
+  const weightTotal = cycleWeightTotal(cycleStart, cycleEnd);
   const food = n(groupBudgets["Food"] ?? "");
   const transport = n(groupBudgets["Transport"] ?? "");
   const lateTax = n(groupBudgets["Transport:late_tax"] ?? "");
   const fun = n(groupBudgets["Fun"] ?? "");
   const subscriptions = n(groupBudgets["Subscriptions"] ?? "");
   const other = n(groupBudgets["Other"] ?? "");
-  const incapTotal =
-    (food + transport) * weeksInCycle + fun + subscriptions + other + lateTax;
+  const incapTotal = ((food + transport) / 7) * weightTotal + fun + subscriptions + other + lateTax;
   const unassigned = discretionaryCap - incapTotal;
 
   function handleSubmit(e: FormEvent) {
@@ -262,25 +258,9 @@ export function PlanClient({
               <span>{money.format(discretionaryCap)}</span>
             </div>
             <div className="flex justify-between text-text-muted">
-              <span>Allocated (weekly × 4 + monthly)</span>
-              <span>{money.format(allocated)}</span>
+              <span>Unassigned</span>
+              <span className={unassigned < 0 ? "text-over" : ""}>{money.format(unassigned)}</span>
             </div>
-            <div
-              className={`flex justify-between font-bold ${
-                allocated > discretionaryCap ? "text-over" : "text-text"
-              }`}
-            >
-              <span>{allocated > discretionaryCap ? "Over-allocated by" : "Room left to allocate"}</span>
-              <span>{money.format(Math.abs(discretionaryCap - allocated))}</span>
-            </div>
-            {isNewRules && (
-              <div className="mt-1 flex justify-between border-t border-border pt-2 text-text-muted">
-                <span>Unassigned (cap not claimed by any category budget)</span>
-                <span className={unassigned < 0 ? "text-over" : ""}>
-                  {money.format(unassigned)}
-                </span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -311,7 +291,7 @@ function BalancesCard({
 }) {
   const [isPending, startTransition] = useTransition();
   const [inputs, setInputs] = useState<Record<string, string>>({});
-  const [savedAccount, setSavedAccount] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
   const [countBob, setCountBob] = useState(countBobAsCash);
   const [error, setError] = useState<string | null>(null);
 
@@ -323,13 +303,18 @@ function BalancesCard({
       return;
     }
     setError(null);
+    setConfirmation(null);
     startTransition(async () => {
       const result = await recordBalance({ account, amount: amt });
-      if (result?.error) {
+      if (result.error !== null) {
         setError(result.error);
         return;
       }
-      setSavedAccount(account);
+      const at = new Date(result.snapshot_at).toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setConfirmation(`Saved ${result.account} ${money.format(result.amount)} at ${at}`);
       setInputs((prev) => ({ ...prev, [account]: "" }));
     });
   }
@@ -374,7 +359,7 @@ function BalancesCard({
                 value={inputs[account] ?? ""}
                 onChange={(e) => {
                   setInputs((prev) => ({ ...prev, [account]: e.target.value }));
-                  setSavedAccount(null);
+                  setConfirmation(null);
                 }}
                 className={`w-full rounded-lg border-[1.5px] border-border bg-bg py-2 pl-7 pr-3 text-right text-[16px] text-text focus:border-accent ${focusRing}`}
               />
@@ -382,16 +367,17 @@ function BalancesCard({
             <button
               type="button"
               aria-disabled={isPending}
-              onClick={() => save(account)}
+              onClick={(e) => { if (isPending) { e.preventDefault(); return; } save(account); }}
               className={`rounded-lg border-[1.5px] border-border px-3 py-2 text-[0.85rem] text-text hover:border-accent ${focusRing} aria-disabled:opacity-60`}
             >
-              {savedAccount === account ? "Saved" : "Update"}
+              {isPending ? "Saving…" : "Update"}
             </button>
           </div>
         </div>
       ))}
 
       {error ? <p className="text-[0.88rem] text-over">{error}</p> : null}
+      {confirmation ? <p className="text-[0.88rem] font-bold text-signal">{confirmation}</p> : null}
 
       <label className="flex items-center gap-2 border-t border-border pt-3 text-[0.88rem] text-text-muted">
         <input
