@@ -3,7 +3,10 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
+import { cycleBoundsForMonth, daysBetween } from "@/lib/dates";
 import { saveMonthPlan, recordBalance, setCountBobAsCash } from "./actions";
+
+const NEW_RULES_START = "2026-10-31";
 
 export type PlanGroup = {
   group: string;
@@ -17,7 +20,7 @@ type Props = {
   salary: number;
   investments: number;
   savings_target: number;
-  buffer: number;
+  big_buy_accrual: number;
   category_budgets: Record<string, number>;
   weeklyGroups: PlanGroup[];
   monthlyGroups: PlanGroup[];
@@ -70,7 +73,7 @@ export function PlanClient({
   salary: initSalary,
   investments: initInv,
   savings_target: initSavings,
-  buffer: initBuffer,
+  big_buy_accrual: initBigBuyAccrual,
   category_budgets: initBudgets,
   weeklyGroups,
   monthlyGroups,
@@ -84,7 +87,9 @@ export function PlanClient({
   const [salary, setSalary] = useState(initSalary > 0 ? String(initSalary) : "");
   const [investments, setInvestments] = useState(initInv > 0 ? String(initInv) : "");
   const [savingsTarget, setSavingsTarget] = useState(initSavings > 0 ? String(initSavings) : "");
-  const [buffer, setBuffer] = useState(initBuffer > 0 ? String(initBuffer) : "");
+  const [bigBuyAccrual, setBigBuyAccrual] = useState(
+    initBigBuyAccrual > 0 ? String(initBigBuyAccrual) : "",
+  );
   const [groupBudgets, setGroupBudgets] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const g of [...weeklyGroups, ...monthlyGroups]) {
@@ -106,7 +111,25 @@ export function PlanClient({
   // get_dashboard() — it's salary minus the automatic sweeps only. The six
   // bucket budgets are a separate, advisory split of that cap; they don't
   // subtract from it, so "allocated" vs "cap" is a check, not an identity.
-  const discretionaryCap = n(salary) - n(investments) - n(savingsTarget) - n(buffer);
+  const discretionaryCap = n(salary) - n(investments) - n(savingsTarget) - n(bigBuyAccrual);
+
+  // New-rules cycles (31 Oct 2026 on) fund the hero from in-cap category
+  // budgets only, not the flat cap — see get_dashboard() and SPRINT_NOTES.md
+  // item 3. "Unassigned" surfaces the gap so it's a visible decision
+  // (raise a budget, bump the accrual, or leave it idle) rather than money
+  // that silently falls out of both the hero and the fund.
+  const { start: cycleStart, end: cycleEnd } = cycleBoundsForMonth(month);
+  const isNewRules = cycleStart >= NEW_RULES_START;
+  const weeksInCycle = (daysBetween(cycleStart, cycleEnd) + 1) / 7;
+  const food = n(groupBudgets["Food"] ?? "");
+  const transport = n(groupBudgets["Transport"] ?? "");
+  const lateTax = n(groupBudgets["Transport:late_tax"] ?? "");
+  const fun = n(groupBudgets["Fun"] ?? "");
+  const subscriptions = n(groupBudgets["Subscriptions"] ?? "");
+  const other = n(groupBudgets["Other"] ?? "");
+  const incapTotal =
+    (food + transport) * weeksInCycle + fun + subscriptions + other + lateTax;
+  const unassigned = discretionaryCap - incapTotal;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -127,7 +150,7 @@ export function PlanClient({
         salary: n(salary),
         investments: n(investments),
         savings_target: n(savingsTarget),
-        buffer: n(buffer),
+        big_buy_accrual: n(bigBuyAccrual),
         category_budgets: categoryBudgets,
       });
       if (result?.error) {
@@ -159,7 +182,11 @@ export function PlanClient({
           <h2 className="font-spend-display font-bold text-text">Fixed outflows</h2>
           <NumInput label="Investments" value={investments} onChange={setInvestments} />
           <NumInput label="Savings target" value={savingsTarget} onChange={setSavingsTarget} />
-          <NumInput label="Buffer" value={buffer} onChange={setBuffer} />
+          <NumInput
+            label="Big Buy accrual/month"
+            value={bigBuyAccrual}
+            onChange={setBigBuyAccrual}
+          />
           <div className="flex justify-between border-t border-border pt-3 text-[0.9rem] font-bold text-text">
             <span>Discretionary cap this cycle</span>
             <span>{money.format(discretionaryCap)}</span>
@@ -227,8 +254,8 @@ export function PlanClient({
               <span>{money.format(n(savingsTarget))}</span>
             </div>
             <div className="flex justify-between text-text-muted">
-              <span>− Buffer</span>
-              <span>{money.format(n(buffer))}</span>
+              <span>− Big Buy accrual</span>
+              <span>{money.format(n(bigBuyAccrual))}</span>
             </div>
             <div className="mt-1 flex justify-between border-t border-border pt-2 font-bold text-text">
               <span>Discretionary cap</span>
@@ -246,6 +273,14 @@ export function PlanClient({
               <span>{allocated > discretionaryCap ? "Over-allocated by" : "Room left to allocate"}</span>
               <span>{money.format(Math.abs(discretionaryCap - allocated))}</span>
             </div>
+            {isNewRules && (
+              <div className="mt-1 flex justify-between border-t border-border pt-2 text-text-muted">
+                <span>Unassigned (cap not claimed by any category budget)</span>
+                <span className={unassigned < 0 ? "text-over" : ""}>
+                  {money.format(unassigned)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

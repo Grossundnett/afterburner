@@ -47,7 +47,7 @@ export default async function SpendPage({
   // rather than eight separate queries.
   const historyStart = addDays(weekMon, -49);
 
-  const [{ data: dashboard }, { data: weekRows }, { data: history }, { data: catRows }] =
+  const [{ data: dashboard }, { data: weekRows }, { data: history }, { data: catRows }, { data: transferRow }] =
     await Promise.all([
       supabase.rpc("get_dashboard", { p_today: today }),
       supabase
@@ -68,7 +68,43 @@ export default async function SpendPage({
         .select("key, label, emoji, kind, sort, group, subgroup")
         .eq("user_id", userId)
         .order("sort", { ascending: true }),
+      supabase
+        .from("spend_transfers")
+        .select("week_mon")
+        .eq("user_id", userId)
+        .eq("week_mon", currentWeekMon)
+        .maybeSingle(),
     ]);
+
+  // Emotion footnote: Fun/Big Buy spend over the last 4 weeks, tagged or
+  // not. Only shown once at least one entry in that window has been tagged
+  // — a 0% line for someone who's never used the picker would read as a
+  // judgement rather than a reflection of their own choice not to tag.
+  const funBigBuyKeys = new Set(
+    (catRows ?? []).filter((c) => c.group === "Fun" || c.group === "Big Buy").map((c) => c.key),
+  );
+  let emotionStat: { pct: number; tag: string } | null = null;
+  if (funBigBuyKeys.size > 0) {
+    const fourWeeksAgo = addDays(today, -28);
+    const { data: emotionRows } = await supabase
+      .from("expenses")
+      .select("amount, category, emotion")
+      .eq("user_id", userId)
+      .gte("spent_on", fourWeeksAgo)
+      .lte("spent_on", today);
+
+    const relevant = (emotionRows ?? []).filter((r) => funBigBuyKeys.has(r.category));
+    const total = relevant.reduce((s, r) => s + Number(r.amount), 0);
+    const byTag = new Map<string, number>();
+    for (const r of relevant) {
+      if (!r.emotion) continue;
+      byTag.set(r.emotion, (byTag.get(r.emotion) ?? 0) + Number(r.amount));
+    }
+    if (total > 0 && byTag.size > 0) {
+      const [topTag, topAmount] = [...byTag.entries()].sort((a, b) => b[1] - a[1])[0];
+      emotionStat = { pct: Math.round((topAmount / total) * 100), tag: topTag };
+    }
+  }
 
   const weekTotals = Array.from({ length: 8 }, (_, i) => {
     const mon = addDays(weekMon, -(7 - i) * 7);
@@ -109,6 +145,9 @@ export default async function SpendPage({
           weekTotals={weekTotals}
           categories={categories}
           dashboard={dashboard as Dashboard}
+          isMonday={today === currentWeekMon}
+          transferTicked={transferRow != null}
+          emotionStat={emotionStat}
         />
       </div>
     </main>

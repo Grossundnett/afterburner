@@ -7,14 +7,14 @@ import {
   useRef,
   useState,
   useTransition,
-  type FormEvent,
 } from "react";
 
 import { addDays, daysBetween } from "@/lib/dates";
 import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
 
-import { addExpense, coverOverspend, deleteExpense } from "./actions";
+import { addExpense, coverOverspend, deleteExpense, tickTransfer } from "./actions";
+import { addToWaitlist } from "./waitlist/actions";
 
 export type SpendCategory = {
   key: string;
@@ -40,7 +40,7 @@ export type DashboardCategory = {
   spent: number;
   pace: number;
   over: boolean;
-  kind: "weekly" | "monthly";
+  kind: "weekly" | "monthly" | "fund";
   late_tax: { budget: number; spent: number; over: boolean } | null;
 };
 
@@ -50,7 +50,11 @@ export type Dashboard =
       has_plan: true;
       cycle_start: string;
       cycle_end: string;
+      new_rules: boolean;
       discretionary_cap: number;
+      incap_total: number;
+      unassigned: number;
+      big_buy_fund: number;
       cycle_spent_total: number;
       month_debt: number;
       budget_left_this_week: number;
@@ -72,7 +76,13 @@ type Props = {
   weekTotals: { mon: string; total: number }[];
   categories: SpendCategory[];
   dashboard: Dashboard;
+  isMonday: boolean;
+  transferTicked: boolean;
+  emotionStat: { pct: number; tag: string } | null;
 };
+
+const EMOTIONS = ["bored", "lonely", "celebrating", "punishing"] as const;
+type Emotion = (typeof EMOTIONS)[number];
 
 const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
 
@@ -134,6 +144,7 @@ function BudgetBar({
   budget,
   pace,
   sub,
+  kind,
 }: {
   emoji: string;
   label: string;
@@ -141,16 +152,28 @@ function BudgetBar({
   budget: number;
   pace?: number;
   sub?: { label: string; spent: number; budget: number; over: boolean } | null;
+  kind?: "weekly" | "monthly" | "fund";
 }) {
+  const isFund = kind === "fund";
   const pct = budget > 0 ? (total / budget) * 100 : 0;
   const isOver = pct > 100;
-  const pacePct = pace != null && budget > 0 ? Math.min(100, (pace / budget) * 100) : null;
-  const aheadOfPace = !isOver && pacePct != null && pct > pacePct + 0.5;
+  // A fund isn't a budget you pace against — it just has money in it or it
+  // doesn't, so the pace tick (and the amber "ahead of pace" framing) never
+  // applies to it.
+  const pacePct = !isFund && pace != null && budget > 0 ? Math.min(100, (pace / budget) * 100) : null;
+  const aheadOfPace = !isFund && !isOver && pacePct != null && pct > pacePct + 0.5;
   const basePct = Math.min(100, pct) / BAR_SCALE;
   const overflowPct = isOver ? Math.min(50, pct - 100) / BAR_SCALE : 0;
   const delta = Math.abs(budget - total);
-  const sideLabel =
-    budget === 0 ? "no budget" : isOver ? `${money.format(delta)} over` : `${money.format(delta)} left`;
+  const sideLabel = isFund
+    ? isOver
+      ? `${money.format(delta)} over the fund`
+      : `${money.format(delta)} available`
+    : budget === 0
+      ? "no budget"
+      : isOver
+        ? `${money.format(delta)} over`
+        : `${money.format(delta)} left`;
 
   const fillColor = isOver ? "bg-over" : aheadOfPace ? "bg-signal" : "bg-accent";
 
@@ -220,6 +243,9 @@ export function SpendClient({
   weekTotals,
   categories,
   dashboard,
+  isMonday,
+  transferTicked,
+  emotionStat,
 }: Props) {
   const pillCats = categories.slice(0, 8);
   const moreCats = categories.slice(8);
@@ -232,6 +258,20 @@ export function SpendClient({
   const [formError, setFormError] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [moveDone, setMoveDone] = useState(false);
+  const [ticked, setTicked] = useState(transferTicked);
+  const [tickError, setTickError] = useState<string | null>(null);
+
+  function handleTickTransfer() {
+    setTickError(null);
+    setTicked(true); // optimistic — reverted below on failure
+    startTransition(async () => {
+      const result = await tickTransfer();
+      if (result?.error) {
+        setTickError(result.error);
+        setTicked(false);
+      }
+    });
+  }
 
   const weekSun = addDays(weekMon, 6);
   const isCurrentWeek = weekMon === currentWeekMon;
@@ -247,7 +287,13 @@ export function SpendClient({
   const [category, setCategory] = useState<string>(categories[0]?.key ?? "");
   const [day, setDay] = useState(defaultDay);
   const [account, setAccount] = useState<(typeof ACCOUNTS)[number]>("Apex");
+  const [emotion, setEmotion] = useState<Emotion | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
+
+  // Only Fun and Big Buy ever show the emotion picker — the other four
+  // buckets never add this extra decision to logging a spend.
+  const selectedGroup = categories.find((c) => c.key === category)?.group ?? null;
+  const showEmotionPicker = selectedGroup === "Fun" || selectedGroup === "Big Buy";
 
   const [trackedWeekMon, setTrackedWeekMon] = useState(weekMon);
   if (weekMon !== trackedWeekMon) {
@@ -255,16 +301,28 @@ export function SpendClient({
     setDay(defaultDay);
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setFormError(null);
+  // --- Waitlist gate + night mode (item 5 + 6) -----------------------------
+  // Both are pre-submit interrupts that offer the same choice — waitlist it,
+  // or log it anyway — so they share one piece of state rather than two.
+  // Neither is enforced here: this is the one path that offers waitlisting,
+  // not the only way an over-threshold spend could ever reach `expenses`
+  // (a backfill of something already decided elsewhere still goes straight
+  // through), so there is deliberately no server-side block in addExpense.
+  const WAITLIST_GROUPS = new Set(["Fun", "Subscriptions", "Big Buy"]);
+  const [interrupt, setInterrupt] = useState<"threshold" | "night" | null>(null);
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
+  const [waitlisted, setWaitlisted] = useState(false);
 
-    const amt = parseMoney(amount);
-    if (!amount.trim() || !(amt > 0)) {
-      setFormError("Enter an amount above zero.");
-      return;
-    }
+  function isNightIST(): boolean {
+    const hour = Number(
+      new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false }).format(
+        new Date(),
+      ),
+    );
+    return hour >= 22 || hour < 6;
+  }
 
+  function runSubmit(amt: number) {
     const trimmedNote = note.trim();
     const optimisticExpense: Expense = {
       id: crypto.randomUUID(),
@@ -283,6 +341,7 @@ export function SpendClient({
         note: trimmedNote || null,
         spentOn: day,
         account,
+        emotion: showEmotionPicker ? emotion : null,
       });
 
       if (result?.error) {
@@ -292,7 +351,57 @@ export function SpendClient({
 
       setAmount("");
       setNote("");
+      setEmotion(null);
+      setInterrupt(null);
       amountRef.current?.focus();
+    });
+  }
+
+  function handleSubmit(e: { preventDefault: () => void }, force = false) {
+    e.preventDefault();
+    setFormError(null);
+
+    const amt = parseMoney(amount);
+    if (!amount.trim() || !(amt > 0)) {
+      setFormError("Enter an amount above zero.");
+      return;
+    }
+
+    if (!force) {
+      const overThreshold = WAITLIST_GROUPS.has(selectedGroup ?? "") && amt > 1500;
+      const isSubscription = selectedGroup === "Subscriptions";
+      if (overThreshold || isSubscription) {
+        setInterrupt("threshold");
+        return;
+      }
+      if ((selectedGroup === "Fun" || selectedGroup === "Subscriptions") && isNightIST()) {
+        setInterrupt("night");
+        return;
+      }
+    }
+
+    runSubmit(amt);
+  }
+
+  function handleWaitlistInstead() {
+    setWaitlistError(null);
+    const amt = parseMoney(amount);
+    const trimmedNote = note.trim();
+    startTransition(async () => {
+      const result = await addToWaitlist({
+        item: trimmedNote || catMeta(category).label,
+        category,
+        price: amt,
+      });
+      if (result?.error) {
+        setWaitlistError(result.error);
+        return;
+      }
+      setAmount("");
+      setNote("");
+      setEmotion(null);
+      setInterrupt(null);
+      setWaitlisted(true);
     });
   }
 
@@ -329,7 +438,11 @@ export function SpendClient({
         total: c.spent,
         budget: c.budget,
         pace: c.kind === "monthly" ? c.pace : undefined,
-        over: c.spent - c.budget,
+        kind: c.kind,
+        // A fund being under its own total is never "overspend" in the
+        // mover's sense — Big Buy is never a candidate to cover from or
+        // to be covered, so it should never sort to the top of the list.
+        over: c.kind === "fund" ? -Infinity : c.spent - c.budget,
         sub:
           c.late_tax != null
             ? { label: "Late tax", spent: c.late_tax.spent, budget: c.late_tax.budget, over: c.late_tax.over }
@@ -346,7 +459,9 @@ export function SpendClient({
   // research brief rules out, and "nothing to move" has no number to show.
   //
   // Food and Transport are never donors — they're essentials, not slack to
-  // raid. And Cover is only offered when a single eligible donor's own room
+  // raid. Big Buy's fund is never a donor either — it isn't budget money in
+  // the same pool, it's a separate accrual that happens to render as a bar.
+  // And Cover is only offered when a single eligible donor's own room
   // fully resolves the overspend; the UI moves from one bucket at a time,
   // so proposing a move that leaves the bucket still over is worse than no
   // suggestion. When nothing qualifies, say so with the number rather than
@@ -362,6 +477,7 @@ export function SpendClient({
         (r) =>
           r.bucket !== worst.bucket &&
           !ESSENTIAL_BUCKETS.has(r.bucket) &&
+          r.kind !== "fund" &&
           r.budget - r.total > 0,
       )
       .sort((a, b) => (b.budget - b.total) - (a.budget - a.total));
@@ -422,6 +538,7 @@ export function SpendClient({
   // --- Hero ----------------------------------------------------------------
   const currentWeekSun = addDays(currentWeekMon, 6);
   const daysLeftInWeek = daysBetween(today, currentWeekSun) + 1;
+  const isSunday = today === currentWeekSun;
 
   return (
     <div className="flex flex-col gap-7">
@@ -478,6 +595,42 @@ export function SpendClient({
         </div>
       )}
 
+      {dashboard.has_plan && isSunday && (
+        <Link
+          href="/spend/review"
+          className={`self-start font-bold text-accent underline underline-offset-4 ${focusRing}`}
+        >
+          This week&apos;s review →
+        </Link>
+      )}
+
+      {/* Monday transfer reminder — only on Monday, only until ticked for
+          this ISO week. Disappears Tuesday regardless of tick state; it's
+          targeted friction on habit formation, not a standing nag. */}
+      {dashboard.has_plan && isMonday && !ticked && (
+        <div className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-border bg-surface p-4">
+          <p className="text-text">
+            Transfer{" "}
+            <strong>
+              {money.format(
+                dashboard.binding === "cash"
+                  ? dashboard.cash_left_this_week
+                  : dashboard.budget_left_this_week,
+              )}
+            </strong>{" "}
+            to Apex.
+          </p>
+          {tickError ? <p className="text-[0.85rem] text-over">{tickError}</p> : null}
+          <button
+            type="button"
+            onClick={handleTickTransfer}
+            className={`self-start rounded-[10px] bg-accent px-4 py-2 font-bold text-accent-ink ${focusRing}`}
+          >
+            Done
+          </button>
+        </div>
+      )}
+
       {/* This week's move */}
       {dashboard.has_plan && mover && !moveDone && (
         <div className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-signal/50 bg-surface p-4">
@@ -521,9 +674,17 @@ export function SpendClient({
               budget={r.budget}
               pace={r.pace}
               sub={r.sub}
+              kind={r.kind}
             />
           ))}
         </div>
+      )}
+
+      {emotionStat && (
+        <p className="text-[0.82rem] text-text-muted">
+          {emotionStat.pct}% of Fun/Big Buy spend these last 4 weeks was tagged{" "}
+          <span className="capitalize">{emotionStat.tag}</span>.
+        </p>
       )}
 
       {/* Month strip */}
@@ -609,7 +770,7 @@ export function SpendClient({
               inputMode="decimal"
               placeholder="0"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => { setAmount(e.target.value); setInterrupt(null); setWaitlisted(false); }}
               className={`w-full rounded-lg border-[1.5px] border-border bg-bg py-3 pl-8 pr-3 font-spend-display text-[1.5rem] font-bold text-text focus:border-accent ${focusRing}`}
             />
           </div>
@@ -648,7 +809,7 @@ export function SpendClient({
                 key={cat.key}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => setCategory(cat.key)}
+                onClick={() => { setCategory(cat.key); setEmotion(null); setInterrupt(null); }}
                 className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                   selected ? "border-text bg-text text-bg" : "border-border text-text hover:border-accent"
                 }`}
@@ -660,7 +821,7 @@ export function SpendClient({
           {moreCats.length > 0 && (
             <select
               value={moreCats.some((c) => c.key === category) ? category : ""}
-              onChange={(e) => { if (e.target.value) setCategory(e.target.value); }}
+              onChange={(e) => { if (e.target.value) { setCategory(e.target.value); setEmotion(null); setInterrupt(null); } }}
               className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                 moreCats.some((c) => c.key === category)
                   ? "border-text bg-text text-bg"
@@ -677,6 +838,27 @@ export function SpendClient({
           )}
         </div>
 
+        {showEmotionPicker && (
+          <div className="flex flex-wrap gap-2">
+            {EMOTIONS.map((e) => {
+              const selected = emotion === e;
+              return (
+                <button
+                  key={e}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setEmotion(selected ? null : e)}
+                  className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.82rem] capitalize transition-colors ${focusRing} ${
+                    selected ? "border-text bg-text text-bg" : "border-border text-text-muted hover:border-accent"
+                  }`}
+                >
+                  {e}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <input
           type="text"
           maxLength={300}
@@ -687,15 +869,52 @@ export function SpendClient({
         />
 
         {formError ? <p className="text-[0.88rem] text-over">{formError}</p> : null}
+        {waitlistError ? <p className="text-[0.88rem] text-over">{waitlistError}</p> : null}
+        {waitlisted ? (
+          <p className="text-[0.88rem] text-signal">
+            Added to the waitlist.{" "}
+            <Link href="/spend/waitlist" className="underline underline-offset-4">
+              View it →
+            </Link>
+          </p>
+        ) : null}
 
-        <button
-          type="submit"
-          aria-disabled={isPending}
-          className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
-          onClick={(e) => { if (isPending) e.preventDefault(); }}
-        >
-          {isPending ? "Adding…" : "Add spend"}
-        </button>
+        {interrupt ? (
+          <div className="flex flex-col gap-2 rounded-lg border-[1.5px] border-signal/50 p-3">
+            <p className="text-[0.9rem] text-text">
+              {interrupt === "threshold"
+                ? "Subscriptions, and anything over ₹1,500 in Fun or Big Buy, get a 48-hour pause before they count."
+                : "It's late. Is this the \"punish myself\" kind? Waitlist it?"}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                aria-disabled={isPending}
+                onClick={handleWaitlistInstead}
+                className={`flex-1 rounded-[10px] bg-accent py-2.5 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+              >
+                Waitlist it
+              </button>
+              <button
+                type="button"
+                aria-disabled={isPending}
+                onClick={(e) => handleSubmit(e, true)}
+                className={`flex-1 rounded-[10px] border-[1.5px] border-border py-2.5 font-bold text-text ${focusRing} aria-disabled:opacity-60`}
+              >
+                Log it anyway
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="submit"
+            aria-disabled={isPending}
+            className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
+            onClick={(e) => { if (isPending) e.preventDefault(); }}
+          >
+            {isPending ? "Adding…" : "Add spend"}
+          </button>
+        )}
       </form>
 
       {/* Where it went */}

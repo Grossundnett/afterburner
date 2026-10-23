@@ -138,6 +138,24 @@ export function cycleMonth(iso: string): string {
   return iso.slice(0, 7);
 }
 
+/**
+ * The payday cycle a plan row's `month` (YYYY-MM) governs, as ISO date
+ * bounds. Inverse of `cycleMonth`: `cycle_start` is the last calendar day
+ * of the PRIOR month (payday), `cycle_end` the last calendar day of `month`
+ * itself minus one (the day before the next payday). Must match
+ * `get_dashboard()`'s SQL exactly — same derivation, just run backwards from
+ * the plan row's month instead of forwards from today's date.
+ */
+export function cycleBoundsForMonth(month: string): { start: string; end: string } {
+  const [year, mon] = month.split("-").map(Number);
+  const start = new Date(Date.UTC(year, mon - 1, 0)); // day 0 of `mon` = last day of mon-1
+  const end = new Date(Date.UTC(year, mon, 0) - 86_400_000); // last day of `mon`, minus 1 day
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
+}
+
 /** Hours and fractional minutes from a HH:MM or HH:MM:SS string. */
 export function clockToHours(clock: string): number {
   const [h, m] = clock.split(":").map(Number);
