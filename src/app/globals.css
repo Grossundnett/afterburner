@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
-/* Afterburner design tokens — ARCHITECTURE.md §16.
-   One constant dark base. Only --accent rebinds per route. */
+/* Afterburner design tokens — Tron: Ares direction (theme round,
+   AGENTS.md). One shared near-black base for both app halves; only
+   --accent rebinds per route/sport. Dark only — no light-mode media query,
+   by design, not an oversight. */
 :root {
   color-scheme: dark;
 
-  --bg:         #0A0F14;
-  --surface:    #121A22;
-  --surface-2:  #19232D;
-  --border:     #1F2C38;
-  --text:       #E3E8EE;
-  --text-muted: #5C6B7A;
+  --bg:         #05070A;
+  --surface:    #0D1117;
+  --surface-2:  #141B22;
+  --border:     #1C2530;
+  --text:       #E7ECF2;
+  --text-muted: #5E6B78;
 
-  --accent:     #8FA3B8;   /* default, overridden per route */
+  /* Fitness identity glow: headings, hero numbers, active nav. Reserved —
+     no per-sport colour below may equal this, so a sport is never mistaken
+     for "the app". */
+  --accent:     #FF2E4D;
+  --accent-ink: #0A0407; /* text/icon colour on a solid --accent fill */
 }
 
 [data-sport="run"]        { --accent: #FF7A45; }
-[data-sport="cycling"]    { --accent: #E0413C; }
+[data-sport="cycling"]    { --accent: #2DB1FF; }
 [data-sport="swim"]       { --accent: #4ECDC4; }
 [data-sport="gym"]        { --accent: #A78BFA; }
 [data-sport="body"]       { --accent: #8FA3B8; }
-[data-sport="discipline"] { --accent: #F5C542; }
+[data-sport="discipline"] { --accent: #FF4FA3; }
+
+/* A sport outside the six above (added later, no CSS selector written for
+   it) gets its colour from `sportAccent()` (src/lib/sport-color.ts) as an
+   inline `--accent` style on its own element instead — same hash, same
+   fallback palette, so it's deterministic without a migration. */
+
+/* Static glow — headings, hero numbers, active nav only. Body text stays
+   plain and readable; glow on body text is how you fail WCAG AA contrast,
+   not how you theme something. Not gated on prefers-reduced-motion: it's a
+   static shadow, not motion. */
+.glow-text {
+  text-shadow: 0 0 1px color-mix(in srgb, var(--accent) 85%, transparent),
+    0 0 14px color-mix(in srgb, var(--accent) 55%, transparent);
+}
 
 /* `inline` substitutes the value into each utility, so a [data-sport]
    rebinding of --accent is resolved at the element rather than at :root. */
@@ -59,8 +79,9 @@ body {
   min-height: 8rem;
 }
 
-/* --signal marks targets, goals and today. Amber, matching discipline accent,
-   distinct from sport accents so it reads as "system" not "activity". */
+/* --signal marks targets, goals and today, and (on /spend) "ahead of pace".
+   Amber, shared across both app halves — distinct from every sport accent
+   and from --accent itself, so it reads as "system", not "activity". */
 :root {
   --signal: #F5C542;
 }
@@ -86,37 +107,21 @@ body {
   --color-bad:  var(--bad);
 }
 
-/* Spend route — its own visual identity, scoped under [data-spend] so it
-   never leaks into the fitness pages. Redefines the whole palette rather than
-   layering on top of it: this is deliberately a second visual world, not a
-   themed variant of the first. --over has no Afterburner equivalent (the
-   fitness pages have nothing that reads as "you went over"), and --accent-ink
-   is the text colour that sits on top of --accent, which only matters here
-   because the selected category chip inverts to a solid accent fill. */
+/* Spend route — "Legacy". Same shared near-black base as the fitness side
+   (Tron: Ares direction) — only --accent, --accent-ink and --over rebind
+   here, not the whole palette; the two halves are one visual system now,
+   not two. --accent-ink sits on top of a solid --accent fill (the selected
+   category chip). --over reuses the fitness side's crimson identity colour
+   on purpose — crimson never appears on /spend otherwise, so there's no
+   collision, and "over budget" earns the same alarm colour "the app itself"
+   uses elsewhere. --signal (ahead of pace) is the shared root amber, not
+   redefined here — same meaning, same colour, everywhere it appears.
+   Crimson/amber are RESERVED on this route: never used decoratively, only
+   for over-budget / ahead-of-pace. */
 [data-spend] {
-  --bg:         #121A17;
-  --surface:    #1A2420;
-  --border:     #2C3833;
-  --text:       #E6ECE7;
-  --text-muted: #9AA69F;
-  --accent:     #6FB8A5;
-  --accent-ink: #0F1714;
-  --signal:     #F2C230;
-  --over:       #FF6B85;
-}
-
-@media (prefers-color-scheme: light) {
-  [data-spend] {
-    --bg:         #EEF1EC;
-    --surface:    #F8FAF6;
-    --border:     #D3DAD2;
-    --text:       #1E2A24;
-    --text-muted: #5E6B64;
-    --accent:     #2F6B5E;
-    --accent-ink: #FFFFFF;
-    --signal:     #F2C230;
-    --over:       #C22E4A;
-  }
+  --accent:     #22D3EE;
+  --accent-ink: #04141A;
+  --over:       #FF2E4D;
 }
 
 @theme inline {

@@ -677,6 +677,61 @@ week-scoping code. Please re-check after this deploys; if it's still ₹0 with
 real spends logged this week, that's new information (and worth telling me
 the exact spend dates/timestamps involved, not just the totals).
 
+## FINAL ROUND — chunk C1 (theme preview, pending your approval)
+
+**Pushed to main, live at `afterburner-two.vercel.app/theme-preview`** — no
+login needed (added to `proxy.ts`'s `PUBLIC_PATHS`), no DB reads, sample
+data fabricated in the page itself.
+
+**Tokens, all in `globals.css`:** the two app halves now share ONE dark
+base (`--bg #05070A`, `--surface #0D1117`, `--border #1C2530`, `--text
+#E7ECF2`) instead of `/spend` redefining its entire palette — only
+`--accent`/`--accent-ink`/`--over` rebind under `[data-spend]` now. Removed
+the `@media (prefers-color-scheme: light)` block entirely — dark only, per
+your brief, not an oversight.
+
+- Fitness identity (`--accent` at `:root`): `#FF2E4D` (crimson glow).
+- Spend identity (`[data-spend] --accent`): `#22D3EE` (electric cyan).
+  `--over` is `#FF2E4D` — the SAME value as the fitness identity colour,
+  reused deliberately: crimson never otherwise appears on `/spend`, so
+  there's no collision, and "over budget" earns the same alarm colour the
+  app itself uses. `--signal` (ahead of pace) stays the one shared root
+  amber `#F5C542` — no spend-specific override anymore, same meaning, same
+  colour everywhere.
+- Per-sport palette (`[data-sport="…"]`, none equal to crimson): run
+  `#FF7A45`, cycling `#2DB1FF` (was `#E0413C` — too close to the new
+  crimson identity colour, changed), swim `#4ECDC4`, gym `#A78BFA`, body
+  `#8FA3B8`, discipline `#FF4FA3` (was `#F5C542` — identical to `--signal`,
+  a pre-existing collision fixed while touching this file anyway).
+- New sports (no CSS selector written for them) get a colour from
+  `sportAccent()` (`src/lib/sport-color.ts`) — a deterministic hash of the
+  sport's slug into an 8-colour fallback palette (the six above plus lime
+  and gold), applied as an inline `--accent` style. Demoed in the preview
+  with a fabricated "Climbing" sport.
+- `.glow-text` utility: static `text-shadow` in two layers (tight + wide),
+  built from `--accent` via `color-mix`, so it always matches whichever
+  accent is active. Headings, hero numbers, active nav only — never body
+  text (AA contrast first). Not gated on `prefers-reduced-motion`: it's a
+  static shadow, not animation; the existing reduced-motion guards on
+  `.bar-fill`/`.mark-in`/`.grid-cell-in` are untouched.
+- Contribution grid: no code change needed. It already read every colour
+  from CSS variables (`var(--accent)`, `var(--warn)`, `var(--surface-2)`,
+  `var(--border)`), so the four states (not logged / rest / blocked /
+  trained) inherit the new palette automatically and stay distinguishable
+  by more than brightness, same as before.
+
+**What the preview page shows:** a nav sample with a glowing active link;
+a fitness card with all six sport colours plus the hashed-fallback
+"Climbing" row; the real `ContributionGrid` component (imported directly,
+fabricated data, no DB); a spend hero in cyan; three bars demonstrating on
+pace / ahead of pace (amber) / over (crimson); a static replica of the
+quick-add keypad (no real `addExpense` call — a public page can't
+authenticate to make one); a button and a form field.
+
+**Not done yet, waiting on your look:** nothing applied to any real page.
+Chunk C2 (apply across every page, no layout changes, then delete
+`/theme-preview`) is next, once you approve or send changes.
+
 ---
 
 ## FINAL CHECKLIST — do these in order

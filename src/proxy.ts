@@ -8,10 +8,12 @@ import type { Database } from "@/lib/database.types";
  *
  * `/login` must be here or it would redirect to itself forever. `/auth` must
  * be here because the OAuth callback has to be reachable while signed out —
- * that is the whole point of it. Matching is exact or segment-prefixed, so
- * a route like `/authorize` would not slip through.
+ * that is the whole point of it. `/theme-preview` is a design-review page
+ * with sample data only, no DB reads — meant to be opened on a phone before
+ * signing in. Matching is exact or segment-prefixed, so a route like
+ * `/authorize` would not slip through.
  */
-const PUBLIC_PATHS = ["/login", "/auth"];
+const PUBLIC_PATHS = ["/login", "/auth", "/theme-preview"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
