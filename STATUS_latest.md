@@ -1,8 +1,11 @@
 # Afterburner — Project Status & Handover
 
-Last updated: 23 October 2026 — end of the `spend-sprint` branch, PR open to
-main, not yet merged or run. Migration `0016_spend_sprint.sql` has NOT been
-run in Supabase yet — do that by hand before merging, then redeploy.
+Last updated: final build round. `spend-sprint` merged to `main` and
+`0016_spend_sprint.sql` has run. `0017_final.sql` (day-weighted Unassigned
+fix) is written and pushed; confirm it's been run before trusting
+`/spend/plan`'s Unassigned figure. `0018_categories.sql` (six-category
+model, Shopping sub-budgets) is this round's migration — see this round's
+section below for where things stand.
 
 Live at `afterburner-two.vercel.app` · repo `Grossundnett/afterburner` (private)
 Supabase project ref `ijnemkslclmpjhewydkk`, region Mumbai (ap-south-1)
@@ -12,22 +15,24 @@ My Supabase user id: `bff03fd3-1687-487a-b9ce-ef26ba1c553c`
 
 ---
 
-## 1. RIGHT NOW — balances grant shipped, not yet verified live
+## 1. Balances on /spend/plan — CLOSED
 
-**Balances on `/spend/plan` never saved**, as of the last session. Comma
-parsing, column names and casing were all ruled out by code/schema audit (see
-git history on `spend-sprint` and `SPRINT_NOTES.md` item 1 for the full
-trail) — the one remaining untested theory was a missing table-level `GRANT`
-alongside an otherwise-correct RLS policy. `0016_spend_sprint.sql` adds
-`grant select, insert, update, delete on spend_balances to authenticated`.
+Confirmed working: `Update` now saves and shows "Saved Apex ₹5,000 at
+12:15 pm". The grant in 0016 (or Supabase's own default privileges — never
+conclusively isolated which) fixed the actual save; the only remaining bug
+was cosmetic — `toLocaleTimeString("en-IN", {hour:"2-digit", minute:"2-digit"})`
+defaults to `hourCycle: "h11"` (0-11), which renders noon/midnight hours as
+`0:15 pm` instead of `12:15 pm`. Fixed by forcing `hourCycle: "h12"` and an
+explicit `timeZone: "Asia/Kolkata"` (`PlanClient.tsx`).
 
-**This is not yet confirmed fixed** — the migration hasn't been run in
-Supabase yet (see the banner at the top of this file). Once it's run: enter a
-balance on `/spend/plan`, confirm it saves, and confirm `real_money_left` on
-`/spend` stops reading ₹0. If it still fails after the grant, every write
-already chains `.select()` and surfaces "no row returned" as its own error
-(from a prior session's hardening), so whatever shows next time is new
-information, not a repeat of a theory already ruled out.
+Confirm with (literal user id, never `auth.uid()`):
+```sql
+select account, amount, snapshot_at
+from spend_balances
+where user_id = 'bff03fd3-1687-487a-b9ce-ef26ba1c553c'
+order by snapshot_at desc
+limit 5;
+```
 
 ---
 

@@ -310,7 +310,13 @@ function BalancesCard({
         setError(result.error);
         return;
       }
+      // en-IN's default hourCycle is h11 (0-11), which renders noon/midnight
+      // hours as "0:15 pm" instead of "12:15 pm" — hourCycle must be forced
+      // to h12 (1-12). timeZone is explicit too, so this reads correctly
+      // regardless of the browser's own clock.
       const at = new Date(result.snapshot_at).toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hourCycle: "h12",
         hour: "2-digit",
         minute: "2-digit",
       });
