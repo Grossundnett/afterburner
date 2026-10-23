@@ -1,5 +1,7 @@
 import { addDays, isIsoDate, todayIn, weekStart } from "@/lib/dates";
 import { createClient, getClaims } from "@/lib/supabase/server";
+import { rankCategories } from "@/lib/spend-chip-rank";
+import type { QuickCategory } from "./quick-add/QuickAddClient";
 
 import { SpendClient, type Dashboard, type Expense, type SpendCategory } from "./SpendClient";
 
@@ -42,12 +44,7 @@ export default async function SpendPage({
   const weekSun = addDays(weekMon, 6);
   const currentWeekMon = weekStart(today);
 
-  // 8 weeks ending at the selected week, in one range query grouped in code —
-  // the week-by-week totals below are derived from this single result set
-  // rather than eight separate queries.
-  const historyStart = addDays(weekMon, -49);
-
-  const [{ data: dashboard }, { data: weekRows }, { data: history }, { data: catRows }, { data: transferRow }] =
+  const [{ data: dashboard }, { data: weekRows }, { data: catRows }, { data: recentRows }, { data: transferRow }] =
     await Promise.all([
       supabase.rpc("get_dashboard", { p_today: today }),
       supabase
@@ -58,16 +55,16 @@ export default async function SpendPage({
         .lte("spent_on", weekSun)
         .order("created_at", { ascending: false }),
       supabase
-        .from("expenses")
-        .select("spent_on, amount")
-        .eq("user_id", userId)
-        .gte("spent_on", historyStart)
-        .lte("spent_on", weekSun),
-      supabase
         .from("spend_categories")
         .select("key, label, emoji, kind, sort, group, subgroup")
         .eq("user_id", userId)
         .order("sort", { ascending: true }),
+      supabase
+        .from("expenses")
+        .select("category, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(500),
       supabase
         .from("spend_transfers")
         .select("week_mon")
@@ -75,6 +72,22 @@ export default async function SpendPage({
         .eq("week_mon", currentWeekMon)
         .maybeSingle(),
     ]);
+
+  const currentHour = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false }).format(
+      new Date(),
+    ),
+  );
+  const catMetaForRank = new Map(
+    (catRows ?? []).map((c) => [c.key, { label: c.label, emoji: c.emoji, sort: c.sort, group: c.group ?? null }]),
+  );
+  const rankedKeys = rankCategories(recentRows ?? [], catMetaForRank, currentHour);
+  const quickAddCategories: QuickCategory[] = rankedKeys.map((key) => ({
+    key,
+    label: catMetaForRank.get(key)!.label,
+    emoji: catMetaForRank.get(key)!.emoji,
+    group: catMetaForRank.get(key)!.group,
+  }));
 
   // Emotion footnote: Fun/Big Buy spend over the last 4 weeks, tagged or
   // not. Only shown once at least one entry in that window has been tagged
@@ -106,15 +119,6 @@ export default async function SpendPage({
     }
   }
 
-  const weekTotals = Array.from({ length: 8 }, (_, i) => {
-    const mon = addDays(weekMon, -(7 - i) * 7);
-    const sun = addDays(mon, 6);
-    const total = (history ?? [])
-      .filter((row) => row.spent_on >= mon && row.spent_on <= sun)
-      .reduce((sum, row) => sum + Number(row.amount), 0);
-    return { mon, total };
-  });
-
   const initialExpenses: Expense[] = (weekRows ?? []).map((row) => ({
     id: row.id,
     amount: Number(row.amount),
@@ -142,7 +146,7 @@ export default async function SpendPage({
           currentWeekMon={currentWeekMon}
           today={today}
           initialExpenses={initialExpenses}
-          weekTotals={weekTotals}
+          quickAddCategories={quickAddCategories}
           categories={categories}
           dashboard={dashboard as Dashboard}
           isMonday={today === currentWeekMon}

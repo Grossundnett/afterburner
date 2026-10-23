@@ -1,20 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import {
-  useMemo,
-  useOptimistic,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useMemo, useOptimistic, useState, useTransition } from "react";
 
 import { addDays, daysBetween } from "@/lib/dates";
-import { ACCOUNTS } from "@/lib/accounts";
-import { parseMoney } from "@/lib/money";
 
-import { addExpense, coverOverspend, deleteExpense, tickTransfer } from "./actions";
-import { addToWaitlist } from "./waitlist/actions";
+import { coverOverspend, deleteExpense, tickTransfer } from "./actions";
+import { QuickAddClient, type QuickCategory } from "./quick-add/QuickAddClient";
 
 export type SpendCategory = {
   key: string;
@@ -73,16 +65,13 @@ type Props = {
   currentWeekMon: string;
   today: string;
   initialExpenses: Expense[];
-  weekTotals: { mon: string; total: number }[];
+  quickAddCategories: QuickCategory[];
   categories: SpendCategory[];
   dashboard: Dashboard;
   isMonday: boolean;
   transferTicked: boolean;
   emotionStat: { pct: number; tag: string } | null;
 };
-
-const EMOTIONS = ["bored", "lonely", "celebrating", "punishing"] as const;
-type Emotion = (typeof EMOTIONS)[number];
 
 const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
 
@@ -108,8 +97,6 @@ const dmon = (iso: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" }).format(
     dateParts(iso),
   );
-const weekdayShort = (iso: string) =>
-  new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short" }).format(dateParts(iso));
 const weekdayLong = (iso: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "long" }).format(dateParts(iso));
 
@@ -240,16 +227,13 @@ export function SpendClient({
   currentWeekMon,
   today,
   initialExpenses,
-  weekTotals,
+  quickAddCategories,
   categories,
   dashboard,
   isMonday,
   transferTicked,
   emotionStat,
 }: Props) {
-  const pillCats = categories.slice(0, 8);
-  const moreCats = categories.slice(8);
-
   function catMeta(key: string) {
     return categories.find((c) => c.key === key) ?? { emoji: "📦", label: key };
   }
@@ -276,134 +260,6 @@ export function SpendClient({
   const weekSun = addDays(weekMon, 6);
   const isCurrentWeek = weekMon === currentWeekMon;
   const isLastWeek = weekMon === addDays(currentWeekMon, -7);
-
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekMon, i)), [weekMon]);
-  const allowedDays = useMemo(() => days.filter((d) => d <= today), [days, today]);
-  const defaultDay = allowedDays.includes(today) ? today : allowedDays[allowedDays.length - 1] ?? weekMon;
-
-  // --- Log form state ---------------------------------------------------
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [category, setCategory] = useState<string>(categories[0]?.key ?? "");
-  const [day, setDay] = useState(defaultDay);
-  const [account, setAccount] = useState<(typeof ACCOUNTS)[number]>("Apex");
-  const [emotion, setEmotion] = useState<Emotion | null>(null);
-  const amountRef = useRef<HTMLInputElement>(null);
-
-  // Only Fun and Big Buy ever show the emotion picker — the other four
-  // buckets never add this extra decision to logging a spend.
-  const selectedGroup = categories.find((c) => c.key === category)?.group ?? null;
-  const showEmotionPicker = selectedGroup === "Fun" || selectedGroup === "Big Buy";
-
-  const [trackedWeekMon, setTrackedWeekMon] = useState(weekMon);
-  if (weekMon !== trackedWeekMon) {
-    setTrackedWeekMon(weekMon);
-    setDay(defaultDay);
-  }
-
-  // --- Waitlist gate + night mode (item 5 + 6) -----------------------------
-  // Both are pre-submit interrupts that offer the same choice — waitlist it,
-  // or log it anyway — so they share one piece of state rather than two.
-  // Neither is enforced here: this is the one path that offers waitlisting,
-  // not the only way an over-threshold spend could ever reach `expenses`
-  // (a backfill of something already decided elsewhere still goes straight
-  // through), so there is deliberately no server-side block in addExpense.
-  const WAITLIST_GROUPS = new Set(["Fun", "Subscriptions", "Big Buy"]);
-  const [interrupt, setInterrupt] = useState<"threshold" | "night" | null>(null);
-  const [waitlistError, setWaitlistError] = useState<string | null>(null);
-  const [waitlisted, setWaitlisted] = useState(false);
-
-  function isNightIST(): boolean {
-    const hour = Number(
-      new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false }).format(
-        new Date(),
-      ),
-    );
-    return hour >= 22 || hour < 6;
-  }
-
-  function runSubmit(amt: number) {
-    const trimmedNote = note.trim();
-    const optimisticExpense: Expense = {
-      id: crypto.randomUUID(),
-      amount: Math.round(amt * 100) / 100,
-      category,
-      note: trimmedNote || null,
-      spent_on: day,
-      created_at: new Date().toISOString(),
-    };
-
-    startTransition(async () => {
-      applyOptimistic({ type: "add", expense: optimisticExpense });
-      const result = await addExpense({
-        amount: amt,
-        category,
-        note: trimmedNote || null,
-        spentOn: day,
-        account,
-        emotion: showEmotionPicker ? emotion : null,
-      });
-
-      if (result?.error) {
-        setFormError(result.error);
-        return;
-      }
-
-      setAmount("");
-      setNote("");
-      setEmotion(null);
-      setInterrupt(null);
-      amountRef.current?.focus();
-    });
-  }
-
-  function handleSubmit(e: { preventDefault: () => void }, force = false) {
-    e.preventDefault();
-    setFormError(null);
-
-    const amt = parseMoney(amount);
-    if (!amount.trim() || !(amt > 0)) {
-      setFormError("Enter an amount above zero.");
-      return;
-    }
-
-    if (!force) {
-      const overThreshold = WAITLIST_GROUPS.has(selectedGroup ?? "") && amt > 1500;
-      const isSubscription = selectedGroup === "Subscriptions";
-      if (overThreshold || isSubscription) {
-        setInterrupt("threshold");
-        return;
-      }
-      if ((selectedGroup === "Fun" || selectedGroup === "Subscriptions") && isNightIST()) {
-        setInterrupt("night");
-        return;
-      }
-    }
-
-    runSubmit(amt);
-  }
-
-  function handleWaitlistInstead() {
-    setWaitlistError(null);
-    const amt = parseMoney(amount);
-    const trimmedNote = note.trim();
-    startTransition(async () => {
-      const result = await addToWaitlist({
-        item: trimmedNote || catMeta(category).label,
-        category,
-        price: amt,
-      });
-      if (result?.error) {
-        setWaitlistError(result.error);
-        return;
-      }
-      setAmount("");
-      setNote("");
-      setEmotion(null);
-      setInterrupt(null);
-      setWaitlisted(true);
-    });
-  }
 
   function handleDelete(id: string) {
     startTransition(async () => {
@@ -531,9 +387,6 @@ export function SpendClient({
 
   const navBtn =
     `flex h-[38px] w-[38px] items-center justify-center rounded-full border-[1.5px] border-border text-lg text-text transition-colors hover:border-accent ${focusRing}`;
-
-  const maxWeekTotal = Math.max(...weekTotals.map((w) => w.total), 0);
-  const weekBarScale = Math.max(maxWeekTotal, 1);
 
   // --- Hero ----------------------------------------------------------------
   const currentWeekSun = addDays(currentWeekMon, 6);
@@ -751,171 +604,16 @@ export function SpendClient({
         </Link>
       </div>
 
-      {/* Log card */}
-      <form
+      {/* Log card — the one save path, shared with /spend/quick-add */}
+      <div
         id="log-spend"
-        onSubmit={handleSubmit}
-        className="flex scroll-mt-6 flex-col gap-4 rounded-2xl border-[1.5px] border-border bg-surface p-4"
+        className="flex scroll-mt-6 flex-col items-center rounded-2xl border-[1.5px] border-border bg-surface"
       >
-        <h2 className="font-spend-display text-[1.15rem] font-bold text-text">Log a spend</h2>
-
-        <div className="flex gap-3">
-          <div className="relative flex-1">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-spend-display text-[1.5rem] font-bold text-text-muted">
-              ₹
-            </span>
-            <input
-              ref={amountRef}
-              type="text"
-              inputMode="decimal"
-              placeholder="0"
-              value={amount}
-              onChange={(e) => { setAmount(e.target.value); setInterrupt(null); setWaitlisted(false); }}
-              className={`w-full rounded-lg border-[1.5px] border-border bg-bg py-3 pl-8 pr-3 font-spend-display text-[1.5rem] font-bold text-text focus:border-accent ${focusRing}`}
-            />
-          </div>
-
-          <select
-            value={day}
-            onChange={(e) => setDay(e.target.value)}
-            className={`rounded-lg border-[1.5px] border-border bg-bg px-3 text-[16px] text-text ${focusRing}`}
-          >
-            {days.map((d) => (
-              <option key={d} value={d} disabled={d > today}>
-                {d === today ? "Today" : `${weekdayShort(d)} ${dmon(d)}`}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={account}
-            onChange={(e) => setAccount(e.target.value as (typeof ACCOUNTS)[number])}
-            aria-label="Account"
-            className={`rounded-lg border-[1.5px] border-border bg-bg px-3 text-[16px] text-text ${focusRing}`}
-          >
-            {ACCOUNTS.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {pillCats.map((cat) => {
-            const selected = category === cat.key;
-            return (
-              <button
-                key={cat.key}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => { setCategory(cat.key); setEmotion(null); setInterrupt(null); }}
-                className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
-                  selected ? "border-text bg-text text-bg" : "border-border text-text hover:border-accent"
-                }`}
-              >
-                {cat.emoji} {cat.label}
-              </button>
-            );
-          })}
-          {moreCats.length > 0 && (
-            <select
-              value={moreCats.some((c) => c.key === category) ? category : ""}
-              onChange={(e) => { if (e.target.value) { setCategory(e.target.value); setEmotion(null); setInterrupt(null); } }}
-              className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
-                moreCats.some((c) => c.key === category)
-                  ? "border-text bg-text text-bg"
-                  : "border-border bg-bg text-text hover:border-accent"
-              }`}
-            >
-              <option value="">More…</option>
-              {moreCats.map((cat) => (
-                <option key={cat.key} value={cat.key}>
-                  {cat.emoji} {cat.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {showEmotionPicker && (
-          <div className="flex flex-wrap gap-2">
-            {EMOTIONS.map((e) => {
-              const selected = emotion === e;
-              return (
-                <button
-                  key={e}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setEmotion(selected ? null : e)}
-                  className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.82rem] capitalize transition-colors ${focusRing} ${
-                    selected ? "border-text bg-text text-bg" : "border-border text-text-muted hover:border-accent"
-                  }`}
-                >
-                  {e}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <input
-          type="text"
-          maxLength={300}
-          placeholder="What was it? (optional)"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          className={`w-full rounded-lg border-[1.5px] border-border bg-bg px-3 py-3 text-[16px] text-text focus:border-accent ${focusRing}`}
-        />
-
-        {formError ? <p className="text-[0.88rem] text-over">{formError}</p> : null}
-        {waitlistError ? <p className="text-[0.88rem] text-over">{waitlistError}</p> : null}
-        {waitlisted ? (
-          <p className="text-[0.88rem] text-signal">
-            Added to the waitlist.{" "}
-            <Link href="/spend/waitlist" className="underline underline-offset-4">
-              View it →
-            </Link>
-          </p>
-        ) : null}
-
-        {interrupt ? (
-          <div className="flex flex-col gap-2 rounded-lg border-[1.5px] border-signal/50 p-3">
-            <p className="text-[0.9rem] text-text">
-              {interrupt === "threshold"
-                ? "Subscriptions, and anything over ₹1,500 in Fun or Big Buy, get a 48-hour pause before they count."
-                : "It's late. Is this the \"punish myself\" kind? Waitlist it?"}
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                aria-disabled={isPending}
-                onClick={handleWaitlistInstead}
-                className={`flex-1 rounded-[10px] bg-accent py-2.5 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
-              >
-                Waitlist it
-              </button>
-              <button
-                type="button"
-                aria-disabled={isPending}
-                onClick={(e) => handleSubmit(e, true)}
-                className={`flex-1 rounded-[10px] border-[1.5px] border-border py-2.5 font-bold text-text ${focusRing} aria-disabled:opacity-60`}
-              >
-                Log it anyway
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="submit"
-            aria-disabled={isPending}
-            className={`w-full rounded-[10px] bg-accent py-3 font-bold text-accent-ink ${focusRing} aria-disabled:opacity-60`}
-            onClick={(e) => { if (isPending) e.preventDefault(); }}
-          >
-            {isPending ? "Adding…" : "Add spend"}
-          </button>
-        )}
-      </form>
+        <h2 className="mt-4 self-start px-4 font-spend-display text-[1.15rem] font-bold text-text">
+          Log a spend
+        </h2>
+        <QuickAddClient today={today} categories={quickAddCategories} />
+      </div>
 
       {/* Where it went */}
       <div className="flex flex-col gap-3">
@@ -1000,36 +698,6 @@ export function SpendClient({
             );
           })
         )}
-      </div>
-
-      {/* Last 8 weeks */}
-      <div className="flex flex-col gap-3">
-        <h2 className="font-spend-display text-[1.15rem] font-bold text-text">Last 8 weeks</h2>
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {weekTotals.map(({ mon, total }) => {
-            const selected = mon === weekMon;
-            const barPct = Math.min(100, (total / weekBarScale) * 100);
-            return (
-              <Link
-                key={mon}
-                href={`/spend?week=${mon}`}
-                className={`flex h-[110px] w-[64px] shrink-0 flex-col items-center justify-end gap-1 rounded-sm ${focusRing} ${
-                  selected ? "outline outline-2 -outline-offset-2 outline-signal" : ""
-                }`}
-              >
-                <span className={`text-[0.72rem] ${selected ? "font-bold text-text" : "text-text-muted"}`}>
-                  {money.format(total)}
-                </span>
-                <div className="relative w-full flex-1">
-                  <div className="absolute inset-x-0 bottom-0 rounded-t-[6px] bg-accent" style={{ height: `${barPct}%` }} />
-                </div>
-                <span className={`text-[0.72rem] ${selected ? "font-bold text-text" : "text-text-muted"}`}>
-                  {dmon(mon)}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
       </div>
 
       {/* Import link */}

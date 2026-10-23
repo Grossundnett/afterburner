@@ -605,6 +605,78 @@ only once each one's own cycle has started (`v_row_cycle_start <= p_today`).
 October's old buffer number is structurally unreachable here, not just
 zero by coincidence.
 
+## FINAL ROUND — chunk B (one spend home, one log form)
+
+### B1 — what the old-looking page actually is
+
+It's not a stale deploy. **`/spend` (`SpendClient.tsx`) is the real, current
+page**, and its "Log a spend" form writes to `expenses` via the same
+`addExpense` Server Action quick-add uses. Night mode, the waitlist gate and
+the emotion picker are **not skipped** — `handleSubmit` looks up
+`selectedGroup` from the chosen category's own `.group` field and gates all
+three off it, exactly like quick-add is supposed to.
+
+What actually looks wrong: the form's category chips were
+`categories.slice(0, 8)` — the first 8 rows of `spend_categories` in `sort`
+order, which is the **fine-grained Wallet-mapped key list** (`Meals`,
+`Groceries`, `Taxi`, `Fuel`, …), not the six research-brief buckets (`Food`,
+`Transport`, `Fun`, `Subscriptions`, `Big Buy`, `Other`). Quick-add's own
+chips are also fine-grained keys, but *correctly* so — the research brief
+explicitly wants hour-ranked fine-grained chips there ("bike taxi chips rise
+to the top before 10:00"). The bug was only in the main page's form: it
+showed the first 8 keys unranked, with a "More…" dropdown for the rest,
+instead of a max-6, hour-ranked set.
+
+Separately, **quick-add itself only partly matched its own write-up**:
+SPRINT_NOTES previously claimed quick-add's save path gives it "night mode,
+the waitlist gate and error surfacing all exactly as the main form" — true
+for error surfacing, false for night mode and the waitlist gate. Reading
+`QuickAddClient.tsx`, `handleSubmit` calls `addExpense` directly with no
+threshold or night-mode check at all. Fixed below (B2) by giving the one
+surviving log form (built from quick-add) the same interrupt logic the old
+`/spend` form had.
+
+### B2 — one log form everywhere
+
+Removed `/spend`'s separate inline form (account/day pickers, the raw
+8-category pill list, its own copy of the waitlist/night-mode interrupt) and
+the "Last 8 weeks" chart. `/spend` and `/spend/quick-add` now render the
+same `QuickAddClient`, with:
+- Hour-ranked, max-6 fine-grained category chips (moved the ranking helper
+  from `quick-add/page.tsx` into `src/lib/spend-chip-rank.ts` so both pages
+  call the same function on the same 500-row history query).
+- The night-mode (22:00–06:00 IST) and waitlist-threshold (any
+  Subscriptions amount, or Fun/Big Buy over ₹1,500) interrupts, ported over
+  from the old `/spend` form — this also fixes quick-add's own gap from B1.
+- An optional note field, which the research brief itself calls for
+  ("Saving takes one tap and an optional note") but the original quick-add
+  build omitted.
+- Account fixed to Apex, day fixed to today — both deliberate per the
+  research brief ("Apex is the default account… speed over flexibility").
+  **Dropped capability:** logging a past day or a non-Apex account from
+  `/spend` directly. Backfill still works via `/spend/import` (Wallet CSV)
+  or by editing an entry's date isn't supported anywhere else either — if
+  you need to log yesterday's spend on a different day, there's currently
+  no form for it. Flagging this rather than silently dropping it: tell me
+  if that's a real gap and I'll add a "not today" toggle back.
+
+Kept below the fold: week nav, "Where it went", "Every spend this week" —
+still useful for reviewing what's already logged, nothing in the brief
+argues against them, and they don't compete with the hero for attention.
+
+### B3 — this week ₹0, last week ₹668
+
+Read `page.tsx`'s week-scoping query end to end: `weekMon`/`weekSun` come
+from `weekStart(today)` where `today = todayIn(profile.timezone)` —
+IST-aware, not `toISOString()`. The `expenses` query filters
+`spent_on >= weekMon and spent_on <= weekSun` using those same values. I
+can't find a code path that would misattribute a spend to the wrong week
+given what's in this file now. The most likely explanation is the same one
+as B1 — this was observed against the pre-sprint page, which had different
+week-scoping code. Please re-check after this deploys; if it's still ₹0 with
+real spends logged this week, that's new information (and worth telling me
+the exact spend dates/timestamps involved, not just the totals).
+
 ---
 
 ## FINAL CHECKLIST — do these in order
