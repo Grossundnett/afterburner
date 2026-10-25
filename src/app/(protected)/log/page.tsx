@@ -7,6 +7,7 @@ import { createClient, getClaims } from "@/lib/supabase/server";
 import { formatDurationClock, formatPace, metresToKm } from "@/lib/units";
 import { StatusBanner } from "@/components/status-banner";
 import { SubmitButton } from "@/components/submit-button";
+import { MountedSelect } from "@/components/mounted-select";
 
 import { addNap, addSport, removeNap, saveDay } from "./actions";
 
@@ -521,7 +522,7 @@ export default async function LogPage({
               {/* Not required, and the placeholder not disabled: an empty entry
                   is the normal case when saving the day, and a disabled option
                   submits nothing at all rather than a blank. */}
-              <select
+              <MountedSelect
                 key={editActivity?.id ?? "new"}
                 id="sport"
                 name="sport"
@@ -539,7 +540,7 @@ export default async function LogPage({
                     {sport.label}
                   </option>
                 ))}
-              </select>
+              </MountedSelect>
             </div>
 
             <div className="flex gap-4">

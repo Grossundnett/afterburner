@@ -1050,6 +1050,51 @@ present.
 
 ---
 
+## POST-0018 — keypad hydration + cap feedback fixes
+
+Your phone test (hard refresh, quick `1 2 1 2 1 2 5 3`) found two real
+bugs the earlier code-only audit couldn't have caught without a device:
+
+**a) Silent digit-cap drop.** `press()` capped at 9 digits with
+`d.length >= 9 ? d : d + key` — once hit, extra taps just did nothing, no
+different from a tap that failed to register at all. Fixed:
+`MAX_DIGITS = 8` (caps the typed amount at ₹9,99,999 — no category here
+has a legitimate reason to exceed that), and hitting it now shakes the
+amount (`.shake`, a `translateX` keyframe, `globals.css`) and shows
+"Max ₹9,99,999" in the over colour. The shake re-triggers on every
+rejected tap, not just the first, via a `shakeKey` counter remounting the
+shaking element (re-applying the same class name to an element already
+mid-animation does not restart a CSS animation on its own).
+
+**b) Early taps before hydration.** The keypad, chips, note field and
+Add button are now disabled and visibly dimmed (`opacity-50`) until a
+`mounted` state flips true in an effect — the standard client-hydration
+flag pattern. This is the one place in the app where `setState` directly
+in an effect body is actually correct: there's no render-time way to know
+the client has hydrated, which is exactly what this effect existing *is*
+— flagged `eslint-disable-next-line react-hooks/set-state-in-effect` with
+that reasoning inline, not suppressed silently.
+
+Applied the same pattern to `/log`'s sport `<select>` as asked
+(`src/components/mounted-select.tsx`) — worth noting honestly: a native
+select doesn't need JS to be usable, so this disables a control that was
+already working, purely for the visible-readiness cue you asked for. If
+that ever reads as *more* annoying than reassuring in daily use, it's an
+easy revert (one import swap back to a plain `<select>`).
+
+**Bundle-size check, as asked:** inspected `.next/static/chunks` after a
+production build rather than guessing. `QuickAddClient`'s own chunk is
+~5 KB; a shared `/spend`-route chunk bundling several client components
+together is ~20 KB. The only genuinely large chunk (~224 KB) is the
+React/Next.js framework runtime, shared by every route in the app, not
+something specific to quick-add — nothing to trim there without removing
+React itself. The hydration lag you saw is more plausibly mobile network
+latency downloading/parsing that shared baseline than anything bloating
+this one page, which is exactly what fix (b) addresses regardless of
+cause.
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the
