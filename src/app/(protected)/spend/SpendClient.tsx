@@ -27,13 +27,19 @@ export type Expense = {
   created_at: string;
 };
 
+/** Food/Transport (weekly, no sub-budgets): spent-only totals, label -> rupees.
+ * Shopping (monthly, the only category with sub-budgets): a budget/spent/over
+ * triple per sub-label. Which shape a given bucket's `sub` is in is implied by
+ * the bucket name at the call site, not encoded in the type — the JSON comes
+ * straight off get_dashboard's return value either way. */
 export type DashboardCategory = {
   budget: number;
   spent: number;
   pace: number;
   over: boolean;
   kind: "weekly" | "monthly" | "fund";
-  late_tax: { budget: number; spent: number; over: boolean } | null;
+  sub: Record<string, number> | Record<string, { budget: number; spent: number; over: boolean }> | null;
+  paid_rides: { count: number; total: number } | null;
 };
 
 export type Dashboard =
@@ -46,7 +52,7 @@ export type Dashboard =
       discretionary_cap: number;
       incap_total: number;
       unassigned: number;
-      big_buy_fund: number;
+      shopping_fund: number;
       cycle_spent_total: number;
       month_debt: number;
       budget_left_this_week: number;
@@ -73,7 +79,7 @@ type Props = {
   emotionStat: { pct: number; tag: string } | null;
 };
 
-const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
+const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Shopping", "Other"] as const;
 
 // Overflow caps at +50% past the budget mark, so one blown bar can't make the
 // others unreadable. The real rupee figure next to it carries the magnitude.
@@ -130,16 +136,22 @@ function BudgetBar({
   total,
   budget,
   pace,
-  sub,
+  extraLines,
   kind,
+  indent,
 }: {
   emoji: string;
   label: string;
   total: number;
   budget: number;
   pace?: number;
-  sub?: { label: string; spent: number; budget: number; over: boolean } | null;
+  /** Plain, pre-formatted text lines shown under the bar — Food/Transport's
+   * sub-label breakdown, Transport's "Paid rides" line. Not a budget
+   * comparison of their own, just information. */
+  extraLines?: string[];
   kind?: "weekly" | "monthly" | "fund";
+  /** Shopping's four sub-budget bars render indented under its parent. */
+  indent?: boolean;
 }) {
   const isFund = kind === "fund";
   const pct = budget > 0 ? (total / budget) * 100 : 0;
@@ -165,7 +177,7 @@ function BudgetBar({
   const fillColor = isOver ? "bg-over" : aheadOfPace ? "bg-signal" : "bg-accent";
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={`flex flex-col gap-1.5 ${indent ? "ml-5" : ""}`}>
       <div className="flex items-center justify-between gap-2 text-[0.92rem]">
         <span className="flex items-center gap-1.5 text-text">
           <span>{emoji}</span>
@@ -212,12 +224,11 @@ function BudgetBar({
         {sideLabel}
       </p>
 
-      {sub && (
-        <p className={`text-[0.76rem] ${sub.over ? "text-over" : "text-text-muted"}`}>
-          {sub.label}: {money.format(sub.spent)} / {money.format(sub.budget)}
-          {sub.over ? " — over" : ""}
+      {extraLines?.map((line, i) => (
+        <p key={i} className="text-[0.76rem] text-text-muted">
+          {line}
         </p>
-      )}
+      ))}
     </div>
   );
 }
@@ -284,10 +295,31 @@ export function SpendClient({
   // --- Dashboard-derived bucket rows, sorted by overspend -----------------
   const bucketRows = useMemo(() => {
     if (!dashboard.has_plan) return [];
+    const dayOfCycle = daysBetween(dashboard.cycle_start, today) + 1;
+    const cycleLen = daysBetween(dashboard.cycle_start, dashboard.cycle_end) + 1;
+
     return BUCKETS.map((bucket) => {
       const c = dashboard.categories[bucket];
       if (!c) return null;
       const meta = bucketMeta(categories, bucket);
+
+      const extraLines: string[] = [];
+      let shoppingSubRows: { label: string; budget: number; spent: number; over: boolean; pace: number }[] = [];
+
+      if (bucket === "Shopping" && c.sub) {
+        shoppingSubRows = Object.entries(c.sub as Record<string, { budget: number; spent: number; over: boolean }>)
+          .map(([label, s]) => ({ ...s, label, pace: s.budget * (dayOfCycle / Math.max(cycleLen, 1)) }));
+      } else if (c.sub) {
+        const parts = Object.entries(c.sub as Record<string, number>)
+          .filter(([, amt]) => amt > 0)
+          .map(([label, amt]) => `${label} ${money.format(amt)}`);
+        if (parts.length > 0) extraLines.push(parts.join(" · "));
+      }
+      if (bucket === "Transport" && c.paid_rides && c.paid_rides.count > 0) {
+        const n = c.paid_rides.count;
+        extraLines.push(`${n} paid ride${n === 1 ? "" : "s"} · ${money.format(c.paid_rides.total)} this week`);
+      }
+
       return {
         bucket,
         emoji: meta.emoji,
@@ -296,18 +328,19 @@ export function SpendClient({
         pace: c.kind === "monthly" ? c.pace : undefined,
         kind: c.kind,
         // A fund being under its own total is never "overspend" in the
-        // mover's sense — Big Buy is never a candidate to cover from or
-        // to be covered, so it should never sort to the top of the list.
+        // mover's sense — Shopping's fund is never a candidate to cover
+        // from or to be covered, so it should never sort to the top of the
+        // list. (Under October's old rules Shopping is kind "monthly", not
+        // "fund", and participates in the move logic like any other
+        // category — unaffected by this.)
         over: c.kind === "fund" ? -Infinity : c.spent - c.budget,
-        sub:
-          c.late_tax != null
-            ? { label: "Late tax", spent: c.late_tax.spent, budget: c.late_tax.budget, over: c.late_tax.over }
-            : null,
+        extraLines,
+        shoppingSubRows,
       };
     })
       .filter((r): r is NonNullable<typeof r> => r !== null)
       .sort((a, b) => b.over - a.over);
-  }, [dashboard, categories]);
+  }, [dashboard, categories, today]);
 
   // --- This week's move: worst over-budget bucket, covered from the one
   // with the most room. Omitted entirely when nothing is over — an
@@ -315,7 +348,7 @@ export function SpendClient({
   // research brief rules out, and "nothing to move" has no number to show.
   //
   // Food and Transport are never donors — they're essentials, not slack to
-  // raid. Big Buy's fund is never a donor either — it isn't budget money in
+  // raid. Shopping's fund is never a donor either — it isn't budget money in
   // the same pool, it's a separate accrual that happens to render as a bar.
   // And Cover is only offered when a single eligible donor's own room
   // fully resolves the overspend; the UI moves from one bucket at a time,
@@ -515,27 +548,44 @@ export function SpendClient({
         <p className="text-[0.85rem] text-text-muted">Moved. The bars below update on next load.</p>
       )}
 
-      {/* Six category bars, sorted by overspend */}
+      {/* Six category bars, sorted by overspend. Shopping's four sub-budgets
+          render as their own indented bars right under its parent, each
+          with its own pace tick and overflow — not just a text line, since
+          they're real budgets (unlike Food/Transport's sub-labels, which
+          have none). */}
       {dashboard.has_plan && bucketRows.length > 0 && (
         <div className="flex flex-col gap-4">
           {bucketRows.map((r) => (
-            <BudgetBar
-              key={r.bucket}
-              emoji={r.emoji}
-              label={r.bucket}
-              total={r.total}
-              budget={r.budget}
-              pace={r.pace}
-              sub={r.sub}
-              kind={r.kind}
-            />
+            <div key={r.bucket} className="flex flex-col gap-3">
+              <BudgetBar
+                emoji={r.emoji}
+                label={r.bucket}
+                total={r.total}
+                budget={r.budget}
+                pace={r.pace}
+                extraLines={r.extraLines}
+                kind={r.kind}
+              />
+              {r.shoppingSubRows.map((s) => (
+                <BudgetBar
+                  key={s.label}
+                  emoji="·"
+                  label={s.label}
+                  total={s.spent}
+                  budget={s.budget}
+                  pace={s.pace}
+                  kind="monthly"
+                  indent
+                />
+              ))}
+            </div>
           ))}
         </div>
       )}
 
       {emotionStat && (
         <p className="text-[0.82rem] text-text-muted">
-          {emotionStat.pct}% of Fun/Big Buy spend these last 4 weeks was tagged{" "}
+          {emotionStat.pct}% of Fun/Shopping spend these last 4 weeks was tagged{" "}
           <span className="capitalize">{emotionStat.tag}</span>.
         </p>
       )}

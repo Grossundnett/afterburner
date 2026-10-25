@@ -4,6 +4,41 @@ import { redirect } from "next/navigation";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
 // ---------------------------------------------------------------------------
+// Wallet category -> this app's six-category model (migration 0018).
+// Same mapping 0018_categories.sql's own data migration used for existing
+// rows, kept consistent here for every row imported from now on. A Wallet
+// category not in this map (or a brand-new one Wallet adds later) falls
+// through to Other, flagged via `unlabeled` for visibility — it was never
+// silently dropped before, and still isn't.
+// ---------------------------------------------------------------------------
+const WALLET_CATEGORY_MAP: Record<string, { category: string; subLabel?: string }> = {
+  "Meals": { category: "Food", subLabel: "Eating out" },
+  "Groceries": { category: "Food", subLabel: "Groceries" },
+  "Restaurant, fast-food": { category: "Food", subLabel: "Eating out" },
+  "Juices, Drinks": { category: "Food", subLabel: "Snacks & drinks" },
+  // "unless clearly an auto" — Wallet's Taxi key doesn't distinguish that,
+  // same reasoning 0018's data migration used for existing rows.
+  "Taxi": { category: "Transport", subLabel: "Bike taxi" },
+  "Public transport": { category: "Transport", subLabel: "Public transport" },
+  "Fuel": { category: "Transport" },
+  "Parking": { category: "Transport" },
+  "Life & Entertainment": { category: "Fun" },
+  "Guilty pleasure": { category: "Fun" },
+  "Business trips": { category: "Fun" },
+  "Software, apps, games": { category: "Subscriptions" },
+  "Dating": { category: "Subscriptions" },
+  "Active sport, fitness": { category: "Shopping", subLabel: "Fitness gear" },
+  "Shopping": { category: "Shopping" },
+  "Clothes & Footwear": { category: "Shopping", subLabel: "Clothes & shoes" },
+  "Health care, doctor": { category: "Other" },
+  "Health and beauty": { category: "Other" },
+  "Child Support": { category: "Other" },
+  "Charity, gifts": { category: "Other" },
+  "Energy, utilities": { category: "Other" },
+  "Others": { category: "Other" },
+};
+
+// ---------------------------------------------------------------------------
 // Column indices (from the Wallet CSV header):
 // account;category;currency;amount;ref_currency_amount;type;payment_type;note;date;transfer;payee;labels
 // ---------------------------------------------------------------------------
@@ -34,7 +69,8 @@ export type ExpenseImportRow = {
   spent_on: string;       // calendar date in IST
   account: string;
   amount: number;
-  category: string;       // spend_category key (or 'Others')
+  category: string;       // one of the six top-level categories
+  sub_label: string | null;
   wallet_category: string;
   note: string | null;
   guilty: boolean;
@@ -82,7 +118,7 @@ export type CommitResult = {
   expensesInserted: number;
   expensesUpdated: number;
   moneyMovesInserted: number;
-  newCategoriesAdded: string[];
+  unknownWalletLabels: string[];
   dbExpenseTotal: number;
   parseExpenseTotal: number;
   reconciled: boolean;
@@ -134,13 +170,6 @@ export async function previewImport(
     return { error: `Unexpected CSV format — missing columns: ${missing.join(", ")}` };
   }
 
-  // Load user's category keys
-  const { data: catRows } = await supabase
-    .from("spend_categories")
-    .select("key")
-    .eq("user_id", userId);
-  const catKeys = new Set(catRows?.map((r) => r.key) ?? []);
-
   const expenses: ExpenseImportRow[] = [];
   const moneyMoves: MoneyMoveImportRow[] = [];
   const unknownCounts = new Map<string, number>();
@@ -183,20 +212,25 @@ export async function previewImport(
     // --- Expense row: apply exception overrides ---
     const searchText = [note, payee].filter(Boolean).join(" ");
     let category: string;
+    let sub_label: string | null = null;
     let guilty = false;
     let unlabeled = false;
 
     if (GUILTY_RE.test(searchText)) {
-      category = "Guilty pleasure";
+      category = "Fun";
       guilty = true;
     } else if (DATING_RE.test(searchText)) {
-      category = "Dating";
-    } else if (catKeys.has(walletCat)) {
-      category = walletCat;
+      category = "Subscriptions";
     } else {
-      category = "Others";
-      unlabeled = true;
-      unknownCounts.set(walletCat, (unknownCounts.get(walletCat) ?? 0) + 1);
+      const mapped = WALLET_CATEGORY_MAP[walletCat];
+      if (mapped) {
+        category = mapped.category;
+        sub_label = mapped.subLabel ?? null;
+      } else {
+        category = "Other";
+        unlabeled = true;
+        unknownCounts.set(walletCat, (unknownCounts.get(walletCat) ?? 0) + 1);
+      }
     }
 
     const spent_on = toISTDate(source_ts);
@@ -206,6 +240,7 @@ export async function previewImport(
       account,
       amount,
       category,
+      sub_label,
       wallet_category: walletCat,
       note,
       guilty,
@@ -309,40 +344,15 @@ export async function commitImport(
 
   const { expenses, moneyMoves, rangeStart, rangeEnd, expenseTotal } = preview;
 
-  // 1. Auto-create unknown categories (insert, skip if already exists)
+  // Every row lands under one of the six fixed categories already (an
+  // unrecognised Wallet category falls through to Other, flagged via
+  // `unlabeled`) — there's no new category to create under 0018's model,
+  // unlike the old per-Wallet-key category table this replaced.
   const unknownLabels = [
-    ...new Set(
-      expenses.filter((e) => e.unlabeled).map((e) => e.wallet_category),
-    ),
+    ...new Set(expenses.filter((e) => e.unlabeled).map((e) => e.wallet_category)),
   ];
-  if (unknownLabels.length > 0) {
-    const { data: existingCats } = await supabase
-      .from("spend_categories")
-      .select("key")
-      .eq("user_id", userId)
-      .in("key", unknownLabels);
-    const alreadyExists = new Set(existingCats?.map((c) => c.key) ?? []);
 
-    const toCreate = unknownLabels
-      .filter((l) => !alreadyExists.has(l))
-      .map((label) => ({
-        user_id: userId,
-        key: label,
-        label,
-        emoji: "📦",
-        kind: "monthly" as const,
-        sort: 99,
-        group: "Others",
-        subgroup: null,
-      }));
-
-    if (toCreate.length > 0) {
-      const { error } = await supabase.from("spend_categories").insert(toCreate);
-      if (error) return { error: `Could not create categories: ${error.message}` };
-    }
-  }
-
-  // 2. Partition expenses into new vs. existing (CSV wins on conflict)
+  // Partition expenses into new vs. existing (CSV wins on conflict)
   const { data: existingRows } = await supabase
     .from("expenses")
     .select("source_ts, account")
@@ -368,6 +378,7 @@ export async function commitImport(
         user_id: userId,
         amount: e.amount,
         category: e.category,
+        sub_label: e.sub_label,
         note: e.note,
         spent_on: e.spent_on,
         source: "wallet_csv",
@@ -389,6 +400,7 @@ export async function commitImport(
       .from("expenses")
       .update({
         category: e.category,
+        sub_label: e.sub_label,
         amount: e.amount,
         note: e.note,
         wallet_category: e.wallet_category,
@@ -463,7 +475,7 @@ export async function commitImport(
       expensesInserted,
       expensesUpdated,
       moneyMovesInserted,
-      newCategoriesAdded: unknownLabels,
+      unknownWalletLabels: unknownLabels,
       dbExpenseTotal,
       parseExpenseTotal: expenseTotal,
       reconciled,

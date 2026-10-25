@@ -1,6 +1,5 @@
 import { addDays, isIsoDate, todayIn, weekStart } from "@/lib/dates";
 import { createClient, getClaims } from "@/lib/supabase/server";
-import { rankCategories } from "@/lib/spend-chip-rank";
 import type { QuickCategory } from "./quick-add/QuickAddClient";
 
 import { SpendClient, type Dashboard, type Expense, type SpendCategory } from "./SpendClient";
@@ -44,7 +43,7 @@ export default async function SpendPage({
   const weekSun = addDays(weekMon, 6);
   const currentWeekMon = weekStart(today);
 
-  const [{ data: dashboard }, { data: weekRows }, { data: catRows }, { data: recentRows }, { data: transferRow }] =
+  const [{ data: dashboard }, { data: weekRows }, { data: catRows }, { data: transferRow }] =
     await Promise.all([
       supabase.rpc("get_dashboard", { p_today: today }),
       supabase
@@ -54,17 +53,15 @@ export default async function SpendPage({
         .gte("spent_on", weekMon)
         .lte("spent_on", weekSun)
         .order("created_at", { ascending: false }),
+      // Under 0018's model this is exactly the six top-level categories —
+      // no ranking/subsetting needed anymore (there used to be dozens of
+      // fine-grained Wallet keys to pick six best-of from; now there are
+      // only six, full stop).
       supabase
         .from("spend_categories")
         .select("key, label, emoji, kind, sort, group, subgroup")
         .eq("user_id", userId)
         .order("sort", { ascending: true }),
-      supabase
-        .from("expenses")
-        .select("category, created_at")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(500),
       supabase
         .from("spend_transfers")
         .select("week_mon")
@@ -73,28 +70,18 @@ export default async function SpendPage({
         .maybeSingle(),
     ]);
 
-  const currentHour = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false }).format(
-      new Date(),
-    ),
-  );
-  const catMetaForRank = new Map(
-    (catRows ?? []).map((c) => [c.key, { label: c.label, emoji: c.emoji, sort: c.sort, group: c.group ?? null }]),
-  );
-  const rankedKeys = rankCategories(recentRows ?? [], catMetaForRank, currentHour);
-  const quickAddCategories: QuickCategory[] = rankedKeys.map((key) => ({
-    key,
-    label: catMetaForRank.get(key)!.label,
-    emoji: catMetaForRank.get(key)!.emoji,
-    group: catMetaForRank.get(key)!.group,
+  const quickAddCategories: QuickCategory[] = (catRows ?? []).map((c) => ({
+    key: c.key,
+    label: c.label,
+    emoji: c.emoji,
   }));
 
-  // Emotion footnote: Fun/Big Buy spend over the last 4 weeks, tagged or
+  // Emotion footnote: Fun/Shopping spend over the last 4 weeks, tagged or
   // not. Only shown once at least one entry in that window has been tagged
   // — a 0% line for someone who's never used the picker would read as a
   // judgement rather than a reflection of their own choice not to tag.
   const funBigBuyKeys = new Set(
-    (catRows ?? []).filter((c) => c.group === "Fun" || c.group === "Big Buy").map((c) => c.key),
+    (catRows ?? []).filter((c) => c.group === "Fun" || c.group === "Shopping").map((c) => c.key),
   );
   let emotionStat: { pct: number; tag: string } | null = null;
   if (funBigBuyKeys.size > 0) {

@@ -333,13 +333,14 @@ export function CSVImportClient() {
           )}
         </div>
 
-        {result.newCategoriesAdded.length > 0 && (
+        {result.unknownWalletLabels.length > 0 && (
           <div className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-border bg-surface p-4">
-            <h2 className="font-spend-display font-bold text-text">New categories added</h2>
+            <h2 className="font-spend-display font-bold text-text">Unrecognised Wallet categories</h2>
             <p className="text-[0.88rem] text-text-muted">
-              Added to the Others group. Regroup them in settings if needed.
+              Filed under Other — pick a different chip by hand on /spend if any of these belong
+              somewhere more specific.
             </p>
-            {result.newCategoriesAdded.map((c) => (
+            {result.unknownWalletLabels.map((c) => (
               <p key={c} className="text-[0.9rem] text-text">{c}</p>
             ))}
           </div>

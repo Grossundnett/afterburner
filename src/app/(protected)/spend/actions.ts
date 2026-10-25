@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { todayIn, cycleMonth, weekStart } from "@/lib/dates";
 import { ACCOUNTS } from "@/lib/accounts";
+import { CATEGORY_SUB_LABELS } from "@/lib/spend-categories";
 import { createClient, getClaims } from "@/lib/supabase/server";
 
 /** Postgres uuid, as rendered alongside each expense row. */
@@ -42,6 +43,14 @@ const addExpenseSchema = z.object({
     .max(10_000_000, "That amount is too large.")
     .transform((n) => Math.round(n * 100) / 100),
   category: z.string().min(1, "Pick a category.").max(200),
+  // Set by the chip, never typed — optional even for categories that have
+  // sub-labels (0018: saving on the parent chip alone is a valid entry).
+  subLabel: z
+    .string()
+    .max(40)
+    .nullable()
+    .optional()
+    .transform((v) => (v === undefined || v === "" ? null : v)),
   note: z
     .string()
     .trim()
@@ -53,7 +62,7 @@ const addExpenseSchema = z.object({
   // Which account the money came from, for balance drawdown. Defaults to
   // Apex (the DB column default too) so existing callers keep working.
   account: z.enum(ACCOUNTS).optional().default("Apex"),
-  // Only ever shown on the form for Fun/Big Buy entries — optional even
+  // Only ever shown on the form for Fun/Shopping entries — optional even
   // then, since tagging every single spend is exactly the kind of extra
   // decision SPEND_RESEARCH.md rules out.
   emotion: z
@@ -86,6 +95,13 @@ export async function addExpense(input: AddExpenseInput) {
     return { error: "Pick a valid category." };
   }
 
+  // Sub-label must belong to the category it's attached to — a stale chip
+  // (category switched client-side after a sub-label was already picked,
+  // or a forged value) must not silently attach a mismatched one.
+  if (parsed.data.subLabel && !CATEGORY_SUB_LABELS[parsed.data.category]?.includes(parsed.data.subLabel)) {
+    return { error: "That sub-label doesn't belong to this category." };
+  }
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("timezone")
@@ -106,6 +122,7 @@ export async function addExpense(input: AddExpenseInput) {
       user_id: userId,
       amount: parsed.data.amount,
       category: parsed.data.category,
+      sub_label: parsed.data.subLabel,
       note: parsed.data.note,
       spent_on: parsed.data.spentOn,
       account: parsed.data.account,
@@ -151,7 +168,7 @@ export async function deleteExpense(id: string) {
   revalidatePath("/spend");
 }
 
-const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Big Buy", "Other"] as const;
+const BUCKETS = ["Food", "Transport", "Fun", "Subscriptions", "Shopping", "Other"] as const;
 
 const coverOverspendSchema = z.object({
   from: z.enum(BUCKETS),

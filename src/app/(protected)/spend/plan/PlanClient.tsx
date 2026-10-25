@@ -4,7 +4,10 @@ import { useState, useTransition, type FormEvent } from "react";
 import { ACCOUNTS } from "@/lib/accounts";
 import { parseMoney } from "@/lib/money";
 import { cycleBoundsForMonth, cycleWeightTotal } from "@/lib/dates";
+import { CATEGORY_SUB_LABELS } from "@/lib/spend-categories";
 import { saveMonthPlan, recordBalance, setCountBobAsCash } from "./actions";
+
+const SHOPPING_SUB_LABELS = CATEGORY_SUB_LABELS["Shopping"];
 
 export type PlanGroup = {
   group: string;
@@ -18,7 +21,7 @@ type Props = {
   salary: number;
   investments: number;
   savings_target: number;
-  big_buy_accrual: number;
+  shopping_accrual: number;
   category_budgets: Record<string, number>;
   weeklyGroups: PlanGroup[];
   monthlyGroups: PlanGroup[];
@@ -71,7 +74,7 @@ export function PlanClient({
   salary: initSalary,
   investments: initInv,
   savings_target: initSavings,
-  big_buy_accrual: initBigBuyAccrual,
+  shopping_accrual: initShoppingAccrual,
   category_budgets: initBudgets,
   weeklyGroups,
   monthlyGroups,
@@ -85,17 +88,27 @@ export function PlanClient({
   const [salary, setSalary] = useState(initSalary > 0 ? String(initSalary) : "");
   const [investments, setInvestments] = useState(initInv > 0 ? String(initInv) : "");
   const [savingsTarget, setSavingsTarget] = useState(initSavings > 0 ? String(initSavings) : "");
-  const [bigBuyAccrual, setBigBuyAccrual] = useState(
-    initBigBuyAccrual > 0 ? String(initBigBuyAccrual) : "",
+  const [shoppingAccrual, setShoppingAccrual] = useState(
+    initShoppingAccrual > 0 ? String(initShoppingAccrual) : "",
   );
+  // Shopping has no flat budget of its own — only its four sub-budgets,
+  // which must sum to shoppingAccrual (checked live below, enforced again
+  // server-side in saveMonthPlan).
+  const [shoppingSub, setShoppingSub] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const label of SHOPPING_SUB_LABELS) {
+      const v = initBudgets[`Shopping:${label}`];
+      init[label] = v && v > 0 ? String(v) : "";
+    }
+    return init;
+  });
   const [groupBudgets, setGroupBudgets] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const g of [...weeklyGroups, ...monthlyGroups]) {
+      if (g.group === "Shopping") continue;
       const v = initBudgets[g.group];
       init[g.group] = v && v > 0 ? String(v) : "";
     }
-    const lateTax = initBudgets["Transport:late_tax"];
-    init["Transport:late_tax"] = lateTax && lateTax > 0 ? String(lateTax) : "1500";
     return init;
   });
 
@@ -105,40 +118,56 @@ export function PlanClient({
   // get_dashboard() — it's salary minus the automatic sweeps only. The six
   // bucket budgets are a separate, advisory split of that cap; they don't
   // subtract from it, so "Unassigned" is a check, not an identity.
-  const discretionaryCap = n(salary) - n(investments) - n(savingsTarget) - n(bigBuyAccrual);
+  const discretionaryCap = n(salary) - n(investments) - n(savingsTarget) - n(shoppingAccrual);
 
-  // "Unassigned" is cap minus what the six category budgets actually add up
-  // to over the whole cycle. Food/Transport are weekly rates, and every
-  // week's own Food/Transport bar is scaled by that week's share of Mom's
-  // rule's day-weight mass (_spend_weekly_rate_budget) — so their cycle
-  // total is weeklyRate/7 × the cycle's whole weight mass, NOT
-  // weeklyRate × plain calendar weeks. Using plain weeks here would make
-  // this number disagree with what the weekly bars actually show over the
-  // month. Late tax is its own line (nested under Transport for display,
-  // not inside Transport's own weekly rate), added once like Fun/Subs/Other.
+  // "Unassigned" is cap minus what the five in-cap category budgets
+  // actually add up to over the whole cycle — Shopping is never in-cap
+  // (it's funded by the accrual into its own fund), same whether this
+  // cycle happens to still be running under October's old mechanics or
+  // November's new ones; this editor only ever writes Shopping as
+  // sub-budgets, so there's no flat "Shopping" figure left to add here.
+  // Food/Transport are weekly rates, and every week's own Food/Transport
+  // bar is scaled by that week's share of Mom's rule's day-weight mass
+  // (_spend_weekly_rate_budget) — so their cycle total is weeklyRate/7 ×
+  // the cycle's whole weight mass, NOT weeklyRate × plain calendar weeks.
   const { start: cycleStart, end: cycleEnd } = cycleBoundsForMonth(month);
   const weightTotal = cycleWeightTotal(cycleStart, cycleEnd);
   const food = n(groupBudgets["Food"] ?? "");
   const transport = n(groupBudgets["Transport"] ?? "");
-  const lateTax = n(groupBudgets["Transport:late_tax"] ?? "");
   const fun = n(groupBudgets["Fun"] ?? "");
   const subscriptions = n(groupBudgets["Subscriptions"] ?? "");
   const other = n(groupBudgets["Other"] ?? "");
-  const incapTotal = ((food + transport) / 7) * weightTotal + fun + subscriptions + other + lateTax;
+  const incapTotal = ((food + transport) / 7) * weightTotal + fun + subscriptions + other;
   const unassigned = discretionaryCap - incapTotal;
+
+  const shoppingSubTotal = SHOPPING_SUB_LABELS.reduce((sum, label) => sum + n(shoppingSub[label] ?? ""), 0);
+  const shoppingGap = Math.round((n(shoppingAccrual) - shoppingSubTotal) * 100) / 100;
+  const shoppingMismatch = Math.abs(shoppingGap) > 0.01;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSaved(false);
 
+    if (shoppingMismatch) {
+      setError(
+        shoppingGap > 0
+          ? `Shopping's sub-budgets are ${money.format(shoppingGap)} short of the accrual.`
+          : `Shopping's sub-budgets are ${money.format(Math.abs(shoppingGap))} over the accrual.`,
+      );
+      return;
+    }
+
     const categoryBudgets: Record<string, number> = {};
     for (const g of [...weeklyGroups, ...monthlyGroups]) {
+      if (g.group === "Shopping") continue;
       const v = n(groupBudgets[g.group] ?? "");
       if (v > 0) categoryBudgets[g.group] = v;
     }
-    const lateTax = n(groupBudgets["Transport:late_tax"] ?? "");
-    if (lateTax > 0) categoryBudgets["Transport:late_tax"] = lateTax;
+    for (const label of SHOPPING_SUB_LABELS) {
+      const v = n(shoppingSub[label] ?? "");
+      if (v > 0) categoryBudgets[`Shopping:${label}`] = v;
+    }
 
     startTransition(async () => {
       const result = await saveMonthPlan({
@@ -146,7 +175,7 @@ export function PlanClient({
         salary: n(salary),
         investments: n(investments),
         savings_target: n(savingsTarget),
-        big_buy_accrual: n(bigBuyAccrual),
+        shopping_accrual: n(shoppingAccrual),
         category_budgets: categoryBudgets,
       });
       if (result?.error) {
@@ -179,9 +208,9 @@ export function PlanClient({
           <NumInput label="Investments" value={investments} onChange={setInvestments} />
           <NumInput label="Savings target" value={savingsTarget} onChange={setSavingsTarget} />
           <NumInput
-            label="Big Buy accrual/month"
-            value={bigBuyAccrual}
-            onChange={setBigBuyAccrual}
+            label="Shopping accrual/month"
+            value={shoppingAccrual}
+            onChange={setShoppingAccrual}
           />
           <div className="flex justify-between border-t border-border pt-3 text-[0.9rem] font-bold text-text">
             <span>Discretionary cap this cycle</span>
@@ -197,23 +226,12 @@ export function PlanClient({
             cycle, 1.2× from day 15.
           </p>
           {weeklyGroups.map((g) => (
-            <div key={g.group} className="flex flex-col gap-2">
-              <NumInput
-                label={`${g.emoji} ${g.label}`}
-                value={groupBudgets[g.group] ?? ""}
-                onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
-              />
-              {g.group === "Transport" && (
-                <NumInput
-                  label="⏰ Late tax (bike taxis, per month)"
-                  value={groupBudgets["Transport:late_tax"] ?? ""}
-                  onChange={(v) =>
-                    setGroupBudgets((prev) => ({ ...prev, "Transport:late_tax": v }))
-                  }
-                  indent
-                />
-              )}
-            </div>
+            <NumInput
+              key={g.group}
+              label={`${g.emoji} ${g.label}`}
+              value={groupBudgets[g.group] ?? ""}
+              onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
+            />
           ))}
         </div>
 
@@ -223,14 +241,49 @@ export function PlanClient({
           <p className="text-[0.88rem] text-text-muted">
             Any bucket left blank still tracks spend, just with no bar to compare it to.
           </p>
-          {monthlyGroups.map((g) => (
+          {monthlyGroups
+            .filter((g) => g.group !== "Shopping")
+            .map((g) => (
+              <NumInput
+                key={g.group}
+                label={`${g.emoji} ${g.label}`}
+                value={groupBudgets[g.group] ?? ""}
+                onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
+              />
+            ))}
+        </div>
+
+        {/* Shopping — no flat budget of its own, only its four sub-budgets,
+            which must sum to the accrual above (checked live, enforced
+            again server-side). */}
+        <div className={fieldRow}>
+          <h2 className="font-spend-display font-bold text-text">🛍️ Shopping sub-budgets</h2>
+          <p className="text-[0.88rem] text-text-muted">
+            Split the accrual across these four — they must add up to it exactly.
+          </p>
+          {SHOPPING_SUB_LABELS.map((label) => (
             <NumInput
-              key={g.group}
-              label={`${g.emoji} ${g.label}`}
-              value={groupBudgets[g.group] ?? ""}
-              onChange={(v) => setGroupBudgets((prev) => ({ ...prev, [g.group]: v }))}
+              key={label}
+              label={label}
+              value={shoppingSub[label] ?? ""}
+              onChange={(v) => setShoppingSub((prev) => ({ ...prev, [label]: v }))}
             />
           ))}
+          <div
+            className={`flex justify-between border-t border-border pt-3 text-[0.9rem] font-bold tabular-nums ${
+              shoppingMismatch ? "text-over" : "text-text"
+            }`}
+          >
+            <span>Sub-budgets total</span>
+            <span>{money.format(shoppingSubTotal)}</span>
+          </div>
+          {shoppingMismatch && (
+            <p className="text-[0.85rem] text-over">
+              {shoppingGap > 0
+                ? `${money.format(shoppingGap)} short of the accrual.`
+                : `${money.format(Math.abs(shoppingGap))} over the accrual.`}
+            </p>
+          )}
         </div>
 
         {/* Live summary */}
@@ -250,8 +303,8 @@ export function PlanClient({
               <span>{money.format(n(savingsTarget))}</span>
             </div>
             <div className="flex justify-between text-text-muted">
-              <span>− Big Buy accrual</span>
-              <span>{money.format(n(bigBuyAccrual))}</span>
+              <span>− Shopping accrual</span>
+              <span>{money.format(n(shoppingAccrual))}</span>
             </div>
             <div className="mt-1 flex justify-between border-t border-border pt-2 font-bold text-text">
               <span>Discretionary cap</span>

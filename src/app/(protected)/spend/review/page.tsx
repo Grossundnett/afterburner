@@ -26,7 +26,9 @@ const NO_LEAK_CHALLENGE = "Nothing leaked this week — keep doing what you're d
  * _spend_week_allowance's day-weighting — "which bucket hurt most this
  * week" doesn't need that precision, and a second exact replica would just
  * be another place the two could silently drift apart. See SPRINT_NOTES.md
- * item 8. Big Buy is never included — it's a fund, not a budget. */
+ * item 8. Shopping is never included — under new rules it's a fund, not a
+ * budget (old rules' flat Shopping budget isn't excluded here either way,
+ * since this helper reads category_budgets generically). */
 function weekShares(
   categoryBudgets: Record<string, number>,
   weeksInCycle: number,
@@ -106,7 +108,7 @@ export default async function ReviewPage() {
     const totals: Record<string, number> = {};
     for (const r of rows ?? []) {
       const group = keyToGroup.get(r.category);
-      if (!group || group === "Big Buy") continue;
+      if (!group || group === "Shopping") continue;
       totals[group] = (totals[group] ?? 0) + Number(r.amount);
     }
     return totals;

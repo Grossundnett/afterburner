@@ -1,6 +1,5 @@
 import { createClient, getClaims } from "@/lib/supabase/server";
 import { todayIn } from "@/lib/dates";
-import { rankCategories } from "@/lib/spend-chip-rank";
 import { QuickAddClient, type QuickCategory } from "./QuickAddClient";
 
 export default async function QuickAddPage() {
@@ -17,37 +16,22 @@ export default async function QuickAddPage() {
 
   const supabase = await createClient();
 
-  const [{ data: profile }, { data: catRows }, { data: recentRows }] = await Promise.all([
+  const [{ data: profile }, { data: catRows }] = await Promise.all([
     supabase.from("profiles").select("timezone").eq("id", userId).maybeSingle(),
+    // Exactly the six top-level categories under 0018's model — no ranking
+    // needed, there's nothing left to narrow down from.
     supabase
       .from("spend_categories")
-      .select("key, label, emoji, sort, group")
+      .select("key, label, emoji, sort")
       .eq("user_id", userId)
       .order("sort", { ascending: true }),
-    supabase
-      .from("expenses")
-      .select("category, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(500),
   ]);
 
   const today = todayIn(profile?.timezone ?? "UTC");
-  const currentHour = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false }).format(
-      new Date(),
-    ),
-  );
-
-  const catMeta = new Map(
-    (catRows ?? []).map((c) => [c.key, { label: c.label, emoji: c.emoji, sort: c.sort, group: c.group ?? null }]),
-  );
-  const rankedKeys = rankCategories(recentRows ?? [], catMeta, currentHour);
-  const categories: QuickCategory[] = rankedKeys.map((key) => ({
-    key,
-    label: catMeta.get(key)!.label,
-    emoji: catMeta.get(key)!.emoji,
-    group: catMeta.get(key)!.group,
+  const categories: QuickCategory[] = (catRows ?? []).map((c) => ({
+    key: c.key,
+    label: c.label,
+    emoji: c.emoji,
   }));
 
   return (

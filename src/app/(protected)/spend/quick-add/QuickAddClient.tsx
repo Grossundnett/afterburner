@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
+import { ACCOUNTS } from "@/lib/accounts";
+import { CATEGORY_SUB_LABELS } from "@/lib/spend-categories";
 import { addExpense } from "../actions";
 import { addToWaitlist } from "../waitlist/actions";
 
@@ -11,7 +13,7 @@ import { addToWaitlist } from "../waitlist/actions";
 // from a tap that simply didn't register, which is its own bug class.
 const MAX_DIGITS = 8;
 
-export type QuickCategory = { key: string; label: string; emoji: string; group: string | null };
+export type QuickCategory = { key: string; label: string; emoji: string };
 
 const money = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -27,12 +29,12 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
 const EMOTIONS = ["bored", "lonely", "celebrating", "punishing"] as const;
 type Emotion = (typeof EMOTIONS)[number];
 
-// Any Subscriptions amount, or Fun/Big Buy over ₹1,500, offers the waitlist
+// Any Subscriptions amount, or Fun/Shopping over ₹1,500, offers the waitlist
 // instead of an immediate save. Night mode (22:00–06:00 IST) prompts the
 // same choice for Fun/Subscriptions, regardless of amount. Both are
 // pre-submit interrupts, not a server-side block — a backfill of something
 // already decided elsewhere still goes straight through addExpense.
-const WAITLIST_GROUPS = new Set(["Fun", "Subscriptions", "Big Buy"]);
+const WAITLIST_GROUPS = new Set(["Fun", "Subscriptions", "Shopping"]);
 
 function isNightIST(): boolean {
   const hour = Number(
@@ -43,6 +45,15 @@ function isNightIST(): boolean {
   return hour >= 22 || hour < 6;
 }
 
+/** `d` in YYYY-MM-DD; shows "Today" or "23 Oct" without pulling in a second
+ * date-formatting convention for one label. */
+function dayLabel(d: string, today: string): string {
+  if (d === today) return "Today";
+  const [, m, day] = d.split("-").map(Number);
+  const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${day} ${names[m - 1]}`;
+}
+
 /** Amount-first, numeric-keypad entry rather than a bare <input type=number>
  * — some Android keyboards substitute a locale's own digit glyphs or decimal
  * separator into a numeric input, which silently breaks parseMoney on a
@@ -51,12 +62,19 @@ function isNightIST(): boolean {
  *
  * This is the one save path for every spend — `/spend` embeds this same
  * component rather than a separate form, so night mode, the waitlist gate
- * and the emotion picker only need to exist in one place. */
+ * and the emotion picker only need to exist in one place. Six top-level
+ * chips (the parent categories from 0018's model); tapping one with its own
+ * sub-labels reveals a second chip row, optional — saving on the parent chip
+ * alone is a valid one-tap entry. */
 export function QuickAddClient({ today, categories }: { today: string; categories: QuickCategory[] }) {
   const [digits, setDigits] = useState("");
   const [category, setCategory] = useState<string>(categories[0]?.key ?? "");
+  const [subLabel, setSubLabel] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [emotion, setEmotion] = useState<Emotion | null>(null);
+  const [account, setAccount] = useState<(typeof ACCOUNTS)[number]>("Apex");
+  const [spentOn, setSpentOn] = useState(today);
+  const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -84,8 +102,9 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
   const [shakeKey, setShakeKey] = useState(0);
 
   const amount = digits === "" ? 0 : Number(digits) / 100;
-  const selectedGroup = categories.find((c) => c.key === category)?.group ?? null;
-  const showEmotionPicker = selectedGroup === "Fun" || selectedGroup === "Big Buy";
+  // The category key IS the group under 0018's model — no lookup needed.
+  const subLabels = CATEGORY_SUB_LABELS[category];
+  const showEmotionPicker = category === "Fun" || category === "Shopping";
 
   function press(key: string) {
     setDone(false);
@@ -104,14 +123,23 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
     setDigits((d) => d + key);
   }
 
+  function selectCategory(key: string) {
+    setCategory(key);
+    setSubLabel(null);
+    setEmotion(null);
+    setInterrupt(null);
+    setDone(false);
+  }
+
   function runSave() {
     startTransition(async () => {
       const result = await addExpense({
         amount,
         category,
+        subLabel,
         note: note.trim() || null,
-        spentOn: today,
-        account: "Apex",
+        spentOn,
+        account,
         emotion: showEmotionPicker ? emotion : null,
       });
       if (result?.error) {
@@ -119,6 +147,7 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
         return;
       }
       setDigits("");
+      setSubLabel(null);
       setNote("");
       setEmotion(null);
       setInterrupt(null);
@@ -138,13 +167,13 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
     }
 
     if (!force) {
-      const overThreshold = WAITLIST_GROUPS.has(selectedGroup ?? "") && amount > 1500;
-      const isSubscription = selectedGroup === "Subscriptions";
+      const overThreshold = WAITLIST_GROUPS.has(category) && amount > 1500;
+      const isSubscription = category === "Subscriptions";
       if (overThreshold || isSubscription) {
         setInterrupt("threshold");
         return;
       }
-      if ((selectedGroup === "Fun" || selectedGroup === "Subscriptions") && isNightIST()) {
+      if ((category === "Fun" || category === "Subscriptions") && isNightIST()) {
         setInterrupt("night");
         return;
       }
@@ -156,17 +185,15 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
   function handleWaitlistInstead() {
     setWaitlistError(null);
     const cat = categories.find((c) => c.key === category);
+    const item = note.trim() || [cat?.label ?? category, subLabel].filter(Boolean).join(" — ");
     startTransition(async () => {
-      const result = await addToWaitlist({
-        item: note.trim() || cat?.label || category,
-        category,
-        price: amount,
-      });
+      const result = await addToWaitlist({ item, category, price: amount });
       if (result?.error) {
         setWaitlistError(result.error);
         return;
       }
       setDigits("");
+      setSubLabel(null);
       setNote("");
       setEmotion(null);
       setInterrupt(null);
@@ -187,6 +214,44 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
       </div>
       {atMax ? <p className="text-[0.85rem] font-bold text-over">Max ₹9,99,999</p> : null}
 
+      {/* Account + date — defaults to Apex/Today; this chip is the only way
+          to log a backfill or a non-Apex spend, restoring the capability
+          the full-form removal dropped. */}
+      <button
+        type="button"
+        disabled={!mounted}
+        onClick={() => setShowDetails((v) => !v)}
+        className={`rounded-full border-[1.5px] border-border px-3 py-1 text-[0.8rem] text-text-muted transition-colors ${focusRing} ${
+          showDetails ? "border-accent text-text" : "hover:border-accent"
+        }`}
+      >
+        {account} · {dayLabel(spentOn, today)}
+      </button>
+      {showDetails && (
+        <div className="flex gap-2">
+          <select
+            value={account}
+            disabled={!mounted}
+            onChange={(e) => setAccount(e.target.value as (typeof ACCOUNTS)[number])}
+            aria-label="Account"
+            className={`rounded-lg border-[1.5px] border-border bg-bg px-3 py-2 text-[14px] text-text ${focusRing}`}
+          >
+            {ACCOUNTS.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={spentOn}
+            max={today}
+            disabled={!mounted}
+            onChange={(e) => e.target.value && setSpentOn(e.target.value)}
+            aria-label="Date"
+            className={`rounded-lg border-[1.5px] border-border bg-bg px-3 py-2 text-[14px] text-text ${focusRing}`}
+          />
+        </div>
+      )}
+
       <div className="flex flex-wrap justify-center gap-2">
         {categories.map((c) => {
           const selected = category === c.key;
@@ -196,7 +261,7 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
               type="button"
               disabled={!mounted}
               aria-pressed={selected}
-              onClick={() => { setCategory(c.key); setEmotion(null); setInterrupt(null); setDone(false); }}
+              onClick={() => selectCategory(c.key)}
               className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.9rem] transition-colors ${focusRing} ${
                 selected ? "border-text bg-text text-bg" : "border-border text-text hover:border-accent"
               }`}
@@ -206,6 +271,30 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
           );
         })}
       </div>
+
+      {/* Sub-label reveal — optional, one extra tap at most. Saving on the
+          parent chip alone (no sub-label) is a fully valid entry. */}
+      {subLabels && (
+        <div className="flex flex-wrap justify-center gap-2">
+          {subLabels.map((s) => {
+            const selected = subLabel === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                disabled={!mounted}
+                aria-pressed={selected}
+                onClick={() => setSubLabel(selected ? null : s)}
+                className={`rounded-full border-[1.5px] px-3 py-1.5 text-[0.82rem] transition-colors ${focusRing} ${
+                  selected ? "border-text bg-text text-bg" : "border-border text-text-muted hover:border-accent"
+                }`}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {showEmotionPicker && (
         <div className="flex flex-wrap justify-center gap-2">
@@ -272,7 +361,7 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
         <div className="flex w-full flex-col gap-2 rounded-lg border-[1.5px] border-signal/50 p-3">
           <p className="text-[0.9rem] text-text">
             {interrupt === "threshold"
-              ? "Subscriptions, and anything over ₹1,500 in Fun or Big Buy, get a 48-hour pause before they count."
+              ? "Subscriptions, and anything over ₹1,500 in Fun or Shopping, get a 48-hour pause before they count."
               : "It's late. Is this the \"punish myself\" kind? Waitlist it?"}
           </p>
           <div className="flex gap-2">

@@ -1,6 +1,5 @@
 import { createClient, getClaims } from "@/lib/supabase/server";
 import { todayIn, cycleMonth } from "@/lib/dates";
-import { groupDisplay } from "@/lib/spend-groups";
 import Link from "next/link";
 import { PlanClient, type PlanGroup } from "./PlanClient";
 
@@ -40,7 +39,7 @@ export default async function PlanPage() {
     await Promise.all([
       supabase
         .from("spend_month_plans")
-        .select("salary,investments,savings_target,big_buy_accrual,category_budgets")
+        .select("salary,investments,savings_target,shopping_accrual,category_budgets")
         .eq("user_id", userId)
         .eq("month", month)
         .maybeSingle(),
@@ -68,24 +67,17 @@ export default async function PlanPage() {
     if (!(row.account in latestBalances)) latestBalances[row.account] = Number(row.amount);
   }
 
-  // One row per group, built per kind separately so Food/Travel surface on
-  // the weekly card and the rest on the monthly card. The row's display name
-  // IS the group name (via groupDisplay for the two cosmetic renames); emoji
-  // comes from the self-named singleton (key === group) when one exists,
-  // else the first category in sort order. Row order follows first-seen.
+  // One row per group, built per kind separately so Food/Transport surface
+  // on the weekly card and the rest on the monthly card. Under 0018's
+  // model every category is self-grouped (key === group), so this is just
+  // "the six rows of this kind" — kept as a group-keyed map rather than a
+  // flat list since PlanClient's shape still expects one.
   function buildGroups(kind: "weekly" | "monthly"): PlanGroup[] {
     const map = new Map<string, PlanGroup>();
     for (const cat of catRows ?? []) {
       if (!cat.group || cat.kind !== kind) continue;
-      const existing = map.get(cat.group);
-      if (!existing) {
-        map.set(cat.group, {
-          group: cat.group,
-          emoji: cat.emoji,
-          label: groupDisplay(cat.group),
-        });
-      } else if (cat.key === cat.group) {
-        existing.emoji = cat.emoji;
+      if (!map.has(cat.group)) {
+        map.set(cat.group, { group: cat.group, emoji: cat.emoji, label: cat.group });
       }
     }
     return [...map.values()];
@@ -115,7 +107,7 @@ export default async function PlanPage() {
           salary={Number(plan?.salary ?? 0)}
           investments={Number(plan?.investments ?? 0)}
           savings_target={Number(plan?.savings_target ?? 0)}
-          big_buy_accrual={Number(plan?.big_buy_accrual ?? 0)}
+          shopping_accrual={Number(plan?.shopping_accrual ?? 0)}
           category_budgets={storedBudgets}
           weeklyGroups={weeklyGroups}
           monthlyGroups={monthlyGroups}

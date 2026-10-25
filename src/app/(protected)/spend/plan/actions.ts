@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { ACCOUNTS } from "@/lib/accounts";
+import { CATEGORY_SUB_LABELS } from "@/lib/spend-categories";
 import { createClient, getClaims } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -20,7 +21,7 @@ const saveMonthPlanSchema = z.object({
   salary: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
   investments: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
   savings_target: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
-  big_buy_accrual: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
+  shopping_accrual: z.coerce.number().min(0).transform((n) => Math.round(n * 100) / 100),
   category_budgets: z.record(z.string(), z.number().min(0)),
 });
 
@@ -36,7 +37,25 @@ export async function saveMonthPlan(
     return { error: parsed.error.issues[0]?.message ?? "Plan could not be saved." };
   }
 
-  const { month, salary, investments, savings_target, big_buy_accrual, category_budgets } = parsed.data;
+  const { month, salary, investments, savings_target, shopping_accrual, category_budgets } = parsed.data;
+
+  // Shopping's four sub-budgets are its only budget — they must add up to
+  // exactly what accrues into the fund each month, or money either goes
+  // unaccounted for or the sub-budgets promise more than the fund will
+  // ever hold.
+  const shoppingSubTotal = CATEGORY_SUB_LABELS["Shopping"].reduce(
+    (sum, label) => sum + (category_budgets[`Shopping:${label}`] ?? 0),
+    0,
+  );
+  const shoppingGap = Math.round((shopping_accrual - shoppingSubTotal) * 100) / 100;
+  if (Math.abs(shoppingGap) > 0.01) {
+    return {
+      error:
+        shoppingGap > 0
+          ? `Shopping's sub-budgets are ₹${shoppingGap.toFixed(2)} short of the accrual. Raise a sub-budget or lower the accrual.`
+          : `Shopping's sub-budgets are ₹${Math.abs(shoppingGap).toFixed(2)} over the accrual. Lower a sub-budget or raise the accrual.`,
+    };
+  }
 
   const { data, error } = await supabase
     .from("spend_month_plans")
@@ -47,7 +66,7 @@ export async function saveMonthPlan(
         salary,
         investments,
         savings_target,
-        big_buy_accrual,
+        shopping_accrual,
         category_budgets,
       },
       { onConflict: "user_id,month" },

@@ -107,6 +107,7 @@ export type Database = {
           source: string
           source_ts: string | null
           spent_on: string
+          sub_label: string | null
           unlabeled: boolean
           user_id: string
           wallet_category: string | null
@@ -123,6 +124,7 @@ export type Database = {
           source?: string
           source_ts?: string | null
           spent_on: string
+          sub_label?: string | null
           unlabeled?: boolean
           user_id?: string
           wallet_category?: string | null
@@ -139,6 +141,7 @@ export type Database = {
           source?: string
           source_ts?: string | null
           spent_on?: string
+          sub_label?: string | null
           unlabeled?: boolean
           user_id?: string
           wallet_category?: string | null
@@ -220,7 +223,7 @@ export type Database = {
       spend_month_plans: {
         Row: {
           adjustments: Json
-          big_buy_accrual: number
+          shopping_accrual: number
           category_budgets: Json
           created_at: string
           food_budget: number
@@ -234,7 +237,7 @@ export type Database = {
         }
         Insert: {
           adjustments?: Json
-          big_buy_accrual?: number
+          shopping_accrual?: number
           category_budgets?: Json
           created_at?: string
           food_budget?: number
@@ -248,7 +251,7 @@ export type Database = {
         }
         Update: {
           adjustments?: Json
-          big_buy_accrual?: number
+          shopping_accrual?: number
           category_budgets?: Json
           created_at?: string
           food_budget?: number

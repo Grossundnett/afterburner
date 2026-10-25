@@ -1095,6 +1095,103 @@ cause.
 
 ---
 
+## ITEM 4 — UI for the category model
+
+### Quick-add
+
+- Six chips, always (`QuickAddClient`'s `categories` prop is now just the
+  six `spend_categories` rows — the hour-of-day ranking machinery
+  (`rankCategories`, `src/lib/spend-chip-rank.ts`) is **deleted**. It
+  existed to pick the best 6 of dozens of fine-grained Wallet keys; under
+  0018 there are only 6 categories total, so "rank and pick 6" has nothing
+  left to narrow down. Both `/spend` and `/spend/quick-add` now just fetch
+  `spend_categories` ordered by `sort` and map it straight across.
+- Tapping a chip with sub-labels (Food, Transport, Shopping —
+  `CATEGORY_SUB_LABELS`, `src/lib/spend-categories.ts`) reveals a second
+  row; tapping the same sub-label again deselects it. Saving with no
+  sub-label selected is a normal, valid entry (`sub_label: null`) — the
+  one-tap path is never blocked.
+- "Apex · Today" chip (new) toggles an account `<select>` + date
+  `<input type="date" max={today}>`, restoring the backfill/non-Apex
+  capability chunk B's form removal dropped. Both default to Apex/today
+  and are genuinely optional — most entries never need to open this.
+- Emotion picker: `Fun` or `Shopping` (renamed from `Fun`/`Big Buy`).
+- `addExpense` gains a `subLabel` field, validated twice: Zod shape, then
+  against `CATEGORY_SUB_LABELS[category]` server-side (a stale chip after
+  switching categories client-side, or a forged value, must not attach a
+  sub-label that doesn't belong to the category it's saved under).
+
+### /spend bars
+
+- `BudgetBar`'s old single `sub` prop (built for the one late-tax line)
+  is gone, replaced by `extraLines?: string[]` — plain pre-formatted text
+  lines under a bar. Food/Transport get one combined line
+  ("Groceries ₹450 · Eating out ₹220", only labels with actual spend this
+  week); Transport also gets a "Paid rides" line from `get_dashboard`'s
+  new `paid_rides` field (0018) when it's non-zero.
+- Shopping's four sub-budgets render as **real indented `BudgetBar`s**
+  under the parent (`indent` prop, new), not text — each gets its own bar,
+  overflow and pace tick, per the brief. Pace is computed client-side
+  (`subBudget × dayOfCycle/cycleLen`, the same formula every other
+  monthly-kind bar already uses) rather than adding it to `get_dashboard`'s
+  JSON — avoids a second migration (0018 already ran) for a number this
+  component can derive from data it already has (`dashboard.cycle_start`/
+  `cycle_end`, already fetched; `today`, already a prop).
+- `DashboardCategory`'s `late_tax` field is gone; `sub` is now generic
+  (Shopping: `{budget,spent,over}` per label; Food/Transport: plain
+  `{label: spentAmount}`), plus a new `paid_rides` field.
+- Move card's donor rules unchanged — Food/Transport still never donors,
+  Shopping's fund (kind `"fund"`) still excluded from being either side of
+  a cover. Under October's remaining old-rules days, Shopping is kind
+  `"monthly"` (a normal budget) and participates like Fun/Subscriptions/
+  Other — unaffected by any of this round's changes, since it's the same
+  `kind !== "fund"` check that already handled it.
+
+### /spend/plan
+
+- Renamed `big_buy_accrual` → `shopping_accrual` everywhere (prop names,
+  the server action, `database.types.ts`, the plan-page query).
+- Shopping has **no flat budget field** anymore — only its four
+  sub-budgets, which must sum to the accrual. Checked live in the client
+  (disables nothing, just shows the gap in rupees and colours it over-red)
+  and re-checked, authoritatively, in `saveMonthPlan` — a save is refused
+  with the exact shortfall/excess if they don't match, per the brief.
+- `src/lib/spend-groups.ts` (the "Charity, gifts" → "Charity & gifts"
+  cosmetic-rename map) is **deleted** — those were old fine-grained Wallet
+  key names that can no longer appear as a group under 0018 (everything
+  collapses into "Other" with no sub-label), so the whole indirection had
+  nothing left to rename.
+- **Simplification, not byte-identical to `get_dashboard`'s OLD-rules
+  branch:** this editor always treats Shopping as sub-budgets-only and
+  always excludes it from the live Unassigned preview, regardless of
+  whether the cycle being edited is pre- or post-31 Oct. `get_dashboard`
+  itself still reads a flat `category_budgets->>'Shopping'` for genuinely
+  OLD-rules cycles (October's already-migrated row, specifically) — this
+  only matters if October's plan row gets re-saved through this UI before
+  1 Nov, which would silently stop writing that flat key. Decided this is
+  an acceptable, narrow edge case (a few days, a cycle no one plans to
+  touch again) rather than building two parallel editing modes for a
+  model that's being retired anyway.
+
+### Wallet CSV import (deferred from item 3, done now)
+
+- `WALLET_CATEGORY_MAP` (`import/actions.ts`) replaces the old
+  `catKeys.has(walletCat)` check, which would have matched **nothing**
+  post-0018 (`spend_categories` no longer has rows named "Groceries",
+  "Taxi", etc. — only the six top-level names) — every future import
+  would have silently landed everything under unlabeled/Other without
+  this fix. The map mirrors 0018's own data-migration CASE logic exactly,
+  including the same "Taxi → Bike taxi, no clearer signal available"
+  reasoning and Fuel/Parking getting no sub-label.
+- The "auto-create unknown categories" step in `commitImport` is deleted
+  — there's no new top-level category to create anymore; an unrecognised
+  Wallet label just lands under `Other` with `unlabeled: true`, same
+  visibility as before via the `unknownCategories` preview list, renamed
+  `newCategoriesAdded` → `unknownWalletLabels` in the commit result since
+  nothing is actually being added to the category table anymore.
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the
