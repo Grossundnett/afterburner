@@ -1,9 +1,9 @@
 # Afterburner — Project Status & Handover
 
-**Build phase complete.** Everything below is either live or waiting on
-two migrations you haven't run yet (0017, 0018 — see §1). Once those run
-and you've clicked through the hand-check list in §6, there's nothing left
-to build before a month of real use.
+**Build phase complete.** 0017 and 0018 have both run; every item from the
+final build round (1 through 9) has shipped. Nothing left to build — click
+through the hand-check list in §6, then it's a month of real use before
+planning a native app.
 
 Live at `afterburner-two.vercel.app` · repo `Grossundnett/afterburner` (private)
 Supabase project ref `ijnemkslclmpjhewydkk`, region Mumbai (ap-south-1)
@@ -13,32 +13,17 @@ My Supabase user id: `bff03fd3-1687-487a-b9ce-ef26ba1c553c`
 
 ---
 
-## 1. Migrations — what's run, what isn't
+## 1. Migrations — all run, all live
 
 | Migration | What it does | Status |
 |---|---|---|
 | 0001–0015 | Fitness schema, early spend schema | Run, live |
-| 0016 `spend_sprint` | Balances grant, buffer→big_buy_accrual, transfers, emotion, waitlist, old/new-rules split | **Run, live** |
-| 0017 `final` | Fixes incap_total/Unassigned to use Mom's-rule day-weight mass instead of plain weeks | **Written, pushed — confirm you've run it** |
-| 0018 `categories` | Six-category model, Shopping sub-budgets, deletes late tax | **Written, pushed — NOT RUN** |
+| 0016 `spend_sprint` | Balances grant, buffer→big_buy_accrual, transfers, emotion, waitlist, old/new-rules split | Run, live |
+| 0017 `final` | Fixes incap_total/Unassigned to use Mom's-rule day-weight mass instead of plain weeks | **Run, live** |
+| 0018 `categories` | Six-category model, Shopping sub-budgets, deletes late tax | **Run, live** |
 
-**Run 0018 before trusting anything category-related** — `/spend`'s bars,
-`/spend/plan`'s budgets, and the Wallet import all still expect the old
-fine-grained category keys until it's run (the code changes that depend on
-it, item 4 of this round's brief, were deliberately held back and are
-*also* not yet built — see §2).
-
-Verify each ran:
+Spot-check any time:
 ```sql
--- 0017: get_dashboard includes Shopping in incap_total for OLD-rules cycles
-begin;
-select set_config('request.jwt.claims',
-  '{"sub":"bff03fd3-1687-487a-b9ce-ef26ba1c553c","role":"authenticated"}', true);
-select get_dashboard('2026-10-26');
-rollback;
--- expect "unassigned" to be a real number, not equal to discretionary_cap
-
--- 0018: six categories, nothing else
 select key, "group" from spend_categories
 where user_id = 'bff03fd3-1687-487a-b9ce-ef26ba1c553c' order by sort;
 -- expect exactly 6 rows: Food, Transport, Fun, Subscriptions, Shopping, Other
@@ -46,27 +31,30 @@ where user_id = 'bff03fd3-1687-487a-b9ce-ef26ba1c553c' order by sort;
 
 ---
 
-## 2. What's built this round, and what's deliberately still missing
+## 2. Final build round — every item shipped
 
-This round (the "final build round" brief) shipped items 1, 2, 3, 6, 7, 8
-in full. **Items 4 and 5 were held back on purpose** — they depend on
-0018 being run, and the brief's one stop point was right after writing
-that migration. Once you confirm 0018 ran, the next turn is:
+The "final build round" brief's items 1–9 are all done:
 
-- Item 4 — quick-add's six parent chips with sub-label reveal, the
-  "Apex · Today" chip restoring account/date pickers, six top-level bars
-  with Shopping's four sub-bars indented and a Food/Transport sub-line,
-  "Paid rides" on Transport (the SQL side is already done in 0018 — the
-  UI isn't).
-- Item 5 — seeding the 31 Oct plan values (salary 1,00,505, investments
-  55,000, savings 10,000, shopping_accrual 5,505, Food 1,800/wk, Transport
-  800/wk, Fun 3,000, Subscriptions 1,000, Other 4,000, Shopping split
-  Fitness gear 1,500 / Football 1,000 / Clothes & shoes 2,000 /
-  Electronics 1,005) — can't be entered until item 4's `/spend/plan` UI
-  understands sub-budgets.
-- The Wallet CSV import mapping (`CSVImportClient.tsx`) still writes the
-  *old* fine-grained category keys — bundled into the item-4 turn, since
-  it also depends on 0018's schema.
+1. Balance-save timestamp fixed (`12:15 pm`, not `0:15pm`).
+2. Audited every picker app-wide for network-per-tap — found none, but your
+   phone testing caught two real bugs anyway (silent digit-cap drop, taps
+   before hydration): both fixed. See §9.
+3. Migration 0018 — six-category model, Shopping sub-budgets. Run.
+4. UI for the category model: quick-add's six chips with sub-label reveal
+   and the restored "Apex · Today" account/date chip; `/spend`'s six bars
+   with Shopping's four sub-budgets as real indented bars and a Food/
+   Transport sub-label line; `/spend/plan`'s Shopping sub-budget inputs
+   with a live sum-vs-accrual check; the Wallet CSV import's category
+   mapping updated to match (it would have silently mismatched everything
+   post-0018 otherwise — caught and fixed in the same turn).
+5. The 31 Oct plan values — SQL upsert and the exact `/spend/plan`
+   click-through order are both in `SPRINT_NOTES.md`; enter them (or run
+   the SQL) once this cycle governs "today."
+6. October/November Unassigned figures confirmed exactly by hand.
+7. Theme rolled out (ember orange replaces amber), design-guidelines fixes
+   applied, `/theme-preview` deleted.
+8. `web-design-guidelines` skill committed.
+9. This file.
 
 ## 3. Decisions changed this round (read this against SPEND_RESEARCH.md)
 
@@ -135,22 +123,29 @@ no charts above the fold.
   sub-budgets; Food/Transport's spent-only sub-label totals) and Transport
   carries `paid_rides`.
 - `/spend` — hero → Monday transfer card → this week's move → six bars
-  sorted by overspend → emotion footnote → month strip → quick-add (shared
-  component with `/spend/quick-add`, pure client state, no network per
-  tap) → week nav, "Where it went", "Every spend this week" below the fold.
+  sorted by overspend (Shopping's four sub-budgets as real indented bars
+  under its parent, each with its own pace tick; Food/Transport get a
+  spent-only sub-label line; Transport gets a "Paid rides" line) →
+  emotion footnote → month strip → quick-add (shared component with
+  `/spend/quick-add`, pure client state, no network per tap) → week nav,
+  "Where it went", "Every spend this week" below the fold.
 - `/spend/plan` — salary, investments, savings, shopping_accrual, weekly
-  Food/Transport, monthly Fun/Subscriptions/Other, Unassigned (every
-  cycle now, correctly weighted), balance snapshots with a visible
+  Food/Transport, monthly Fun/Subscriptions/Other, Shopping's four
+  sub-budgets with a live sum-vs-accrual check (refused server-side too if
+  they don't match), Unassigned (every cycle, correctly weighted, always
+  excluding Shopping — see §3), balance snapshots with a visible
   "Saved Apex ₹X at 12:15 pm" confirmation.
 - `/spend/waitlist` — 48-hour pause on Subscriptions (any amount) and
   Fun/Shopping over ₹1,500; server-enforced on real elapsed time.
 - `/spend/review` — Sunday weekly review: under/over, leak of the week, a
   challenge keyed to the leak bucket, streak of weeks under.
-- `/spend/quick-add` — PWA entry point, numeric keypad, hour-ranked chips,
-  night-mode and waitlist interrupts, optional note, emotion picker on
-  Fun/Shopping.
+- `/spend/quick-add` — PWA entry point, numeric keypad (hydration-gated,
+  visibly dimmed until mounted, a visible "Max ₹9,99,999" instead of
+  silently dropping taps at the cap), six always-shown chips with
+  sub-label reveal, an "Apex · Today" chip for account/date, night-mode
+  and waitlist interrupts, optional note, emotion picker on Fun/Shopping.
 - `/spend/import` — Wallet CSV, dedupe, ghost-row detection, reconciliation
-  check. **Still writes old category keys — item 4's turn fixes this.**
+  check, category mapping updated for the six-category model.
 
 ### Phase 0 — outside the app (do once, highest value)
 Require authentication for all Play/App Store purchases · remove saved
@@ -159,10 +154,19 @@ Apex · move dating apps off the home screen.
 
 ---
 
-## 6. Hand-check list — click through these after 0018 runs
+## 6. Hand-check list
 
 - [ ] Keypad test: tap `1 2 1 2 1 2` quickly → shows exactly `121212`;
-      reload, tap `1` once → shows `1`.
+      reload, tap `1` once → shows `1`. (You already found two real bugs
+      here once — confirm both fixes actually hold on your phone.)
+- [ ] Tap a digit past the cap → shakes and shows "Max ₹9,99,999" instead
+      of doing nothing.
+- [ ] Tap "Apex · Today" → account + date pickers open; log a backfilled
+      entry for yesterday on a non-Apex account.
+- [ ] Tap Food, Transport or Shopping → sub-label chips appear; save once
+      with a sub-label picked and once without (both must work).
+- [ ] On `/spend/plan`, make Shopping's sub-budgets not sum to the
+      accrual → Save is refused with the exact gap in rupees.
 - [ ] A waitlist item over ₹1,500 locks for the full 48 hours — try Buy
       before it unlocks and confirm the server refuses it, not just the
       button being hidden.
@@ -173,8 +177,12 @@ Apex · move dating apps off the home screen.
 - [ ] Tag an emotion on a Fun or Shopping entry.
 - [ ] Open `/spend/review` on a Sunday.
 - [ ] Tick the Monday transfer card.
-- [ ] Enter the November plan values (§2) once item 4 ships, and confirm
-      `get_dashboard('2026-10-31')` returns `new_rules: true`.
+- [ ] Enter the November plan values (`SPRINT_NOTES.md`, item 5) and
+      confirm `get_dashboard('2026-10-31')` returns `new_rules: true` and
+      `incap_total` close to ₹19,291.
+- [ ] Import a fresh Wallet CSV and confirm categories/sub-labels land
+      right (Taxi → Transport/Bike taxi, etc.) rather than under
+      "Unrecognised Wallet categories."
 
 ---
 
@@ -244,6 +252,14 @@ lives only in `globals.css` now.
   new function identity every render; declare it at module scope.
 - **Reading a ref's `.current` during render** doesn't update reactively —
   track the value in state instead.
+- **A rejected input (a cap, a limit, an invalid value) must say so,
+  never just do nothing.** A dropped tap and a tap that didn't register
+  look identical to the person doing the tapping.
+- **Client components are briefly non-interactive before hydration** —
+  the keypad's early-tap bug. For anything tapped rapidly right after
+  load, gate on a `mounted` flag (`useState(false)` + `useEffect(() =>
+  setMounted(true), [])`) and dim/disable visibly until then, rather than
+  letting pre-hydration taps silently vanish.
 
 ---
 
