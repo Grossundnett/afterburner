@@ -789,6 +789,100 @@ in the code explains it).
 
 ---
 
+## FINAL BUILD ROUND — item 3 (category model, migration 0018 — NOT YET RUN)
+
+**`supabase/migrations/0018_categories.sql` is written and pushed, not
+run.** Per the brief's one stop point: nothing depending on this schema
+(item 4's UI, item 5's plan values, the Wallet-import-mapping code change
+item 3 itself also asked for) will be pushed until you reply "0018 ran".
+
+### What it does
+
+- `expenses` gains `sub_label text` (nullable), checked against the fixed
+  set of ten sub-labels across all six categories (Groceries/Eating out/
+  Snacks & drinks, Public transport/Auto/Bike taxi, Fitness gear/Football/
+  Clothes & shoes/Electronics). The chip sets it; nothing reads notes for
+  categorisation.
+- `spend_month_plans.big_buy_accrual` → `shopping_accrual` (same
+  conditional-rename pattern as 0016's buffer rename).
+- **Data migration, guarded to run exactly once** (checks whether
+  `spend_categories` still has any non-canonical key before doing
+  anything, so re-running the file is a no-op the second time — see the
+  file's own comment for why a naive re-run would otherwise null out
+  sub-labels it already set):
+  - Every expense's new `category` comes from its **current `group`**
+    (Food/Transport/Fun/Subscriptions/Big Buy→Shopping/Other), not a
+    hardcoded key list — so a category you'd already renamed or
+    re-grouped by hand still lands right.
+  - `sub_label` comes from the old literal key, only where this round's
+    brief gives an unambiguous mapping: Groceries→Groceries; Meals &
+    Restaurant,fast-food→Eating out; Juices,Drinks→Snacks & drinks;
+    Taxi→Bike taxi (per the brief: "unless clearly an auto" — nothing in
+    the stored data distinguishes that, there's no clearer signal to use,
+    so every Taxi row becomes Bike taxi); Public transport→Public
+    transport; Active sport,fitness→Fitness gear; Clothes &
+    Footwear→Clothes & shoes. Fuel and Parking get **no** sub-label —
+    they're personal-vehicle running costs, not a paid ride, so neither
+    "Auto" nor "Bike taxi" fits; the bare old 'Shopping' key (ambiguous
+    between the four new sub-labels) also gets none, per the brief's
+    "otherwise no sub-label." Nothing historical maps to "Football" — it's
+    a new, forward-only option with no past data to backfill.
+  - `spend_categories` is deleted and reseeded to exactly six rows per
+    user: Food/Transport (weekly), Fun/Subscriptions/Shopping/Other
+    (monthly), each self-grouped (`group = key`).
+  - Existing plan rows' `category_budgets->>'Big Buy'` renames to
+    `'Shopping'` (same number — October's ₹6,000 stays ₹6,000, just
+    relabelled) and `'Transport:late_tax'` is dropped outright — there's
+    no new home for that number, the envelope is gone.
+- **`get_dashboard` rewrite** — every `'Big Buy'` literal becomes
+  `'Shopping'`; the whole late-tax block is deleted. Two formula changes
+  that affect real numbers, both required by this round's item 6 hand-check:
+  1. `incap_total` drops the late-tax term entirely (Transport is now one
+     flat weekly rate, nothing added on top).
+  2. `incap_total` now **includes Shopping's flat budget for OLD-rules
+     cycles only** (October: `category_budgets->>'Shopping'`, same as
+     Fun/Subscriptions/Other) — new rules keep excluding it, since it's
+     funded by the accrual instead. Previously (0017) Shopping/Big Buy was
+     never part of `incap_total` under either rule set; this round's own
+     October hand-check explicitly needs it included, so the formula is
+     now rules-dependent where it wasn't before. `v_hero_fund` itself is
+     unaffected — October's hero still reads the flat cap, unchanged.
+  - Every category's JSON entry gains a generic `'sub'` field (replacing
+    `'late_tax'`): per-sub-label `{budget, spent, over}` for Shopping
+    (populated under both rule sets — October just has no sub-budgets
+     configured, so they read as ₹0 budget against whatever was spent);
+    spent-only totals (no budget) for Food/Transport, only including a
+    label once something's actually been spent against it this week.
+  - Transport gains `'paid_rides': {count, total}` — Auto + Bike taxi
+    spend this week, computed in the same function so the UI needs no
+    second query.
+
+### Deferred to the next turn (after "0018 ran")
+
+- The Wallet CSV import mapping (`CSVImportClient.tsx` / its parsing code)
+  still writes the OLD fine-grained category keys — item 3 asked for this
+  to be updated too, but it's code that depends on the new schema
+  existing live, so it's bundled into the item-4 turn instead of risking a
+  deploy against an unmigrated database.
+- Nothing in `/spend`'s UI, `/spend/plan`'s UI, or `addExpense`'s category
+  validation has been touched — they still expect the old fine-grained
+  category set until item 4 ships. This is expected and harmless in the
+  interval: `addExpense` validates against whatever's actually in
+  `spend_categories` at call time, and the dashboard's old TS types reading
+  a now-absent `late_tax` field just see `undefined`, which the existing
+  `!= null` checks already treat the same as `null`.
+
+### Not independently verified against a live database
+
+This migration has not been run against Supabase in this session (no DB
+query access) — only hand-reviewed for SQL structure (balanced
+`do $$...end $$`/`declare...begin...end` blocks, valid `FOREACH`/jsonb
+operator syntax) and logic (traced each branch by hand against the item 6
+numbers below). Run it, then use item 6's queries to confirm the real
+numbers match.
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the
