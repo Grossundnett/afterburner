@@ -883,6 +883,85 @@ numbers match.
 
 ---
 
+## FINAL BUILD ROUND — item 6 (numbers check, by hand)
+
+Recomputed independently of `get_dashboard`, using the same method as the
+previous round's hand-check (`_spend_week_allowance`'s day-weight mass,
+corrected in 0017/0018 to use the mass, not plain weeks).
+
+### October (cap 32,305, weight mass 31.6 = 14×0.8 + 17×1.2)
+
+```
+Food:      1800/7 × 31.6 = 8,125.71 → 8,126   ✓ matches your figure
+Transport:  800/7 × 31.6 = 3,611.43 → 3,611   ✓ matches
+Flat (Fun 3,000 + Subs 1,000 + Shopping 6,000 + Other 4,000) = 14,000
+incap_total = 8,126 + 3,611 + 14,000 = 25,737             ✓ matches
+Unassigned  = 32,305 − 25,737 = 6,568                      ✓ matches
+```
+No gap — this also resolves something I flagged as unverifiable two
+rounds ago ("flat 14,000, I couldn't independently confirm it without your
+real category_budgets"): it's exactly Fun+Subs+Shopping+Other, and
+Shopping's inclusion here is exactly 0018's new rule (old-rules cycles
+include Shopping's flat budget in `incap_total`; new rules don't).
+
+### November (31 Oct–29 Nov, cap 30,000, weight mass 30.4 = 14×0.8 + 16×1.2)
+
+```
+Food:      1800/7 × 30.4 = 7,817.14 → 7,817   ✓ matches
+Transport:  800/7 × 30.4 = 3,474.29 → 3,474   ✓ matches
+Flat (Fun 3,000 + Subs 1,000 + Other 4,000) = 8,000   (Shopping excluded — outside the cap)
+incap_total = 7,817 + 3,474 + 8,000 = 19,291              ✓ matches
+Unassigned  = 30,000 − 19,291 = 10,709                     ✓ matches
+```
+
+### Week of 2–8 Nov (cycle days 3–9, all at weight 0.8 → weight-sum 5.6)
+
+```
+19,291 × 5.6 / 30.4 = 108,029.6 / 30.4 = 3,553.6 → 3,554   ✓ matches
+```
+
+### October month debt into November's first week
+
+**I'm not computing this number — there's no DB query access in this
+session, and the brief is explicit not to invent it.** Here's the query
+and the exact method to apply to its result:
+
+```sql
+select
+  date_trunc('week', e.spent_on)::date as week_mon,
+  sum(e.amount) as spent
+from expenses e
+where e.user_id = 'bff03fd3-1687-487a-b9ce-ef26ba1c553c'
+  and e.spent_on >= '2026-09-30' and e.spent_on <= '2026-10-30'
+group by 1
+order by 1;
+```
+Don't filter out Shopping — October is old rules, and old rules' carry
+loop counts every category, Shopping included (`not v_new_rules or
+group <> 'Shopping'` is true whenever `v_new_rules` is false, regardless
+of group).
+
+Weekly allowances for this cycle, using cap 32,305 and weight mass 31.6
+(same method as above, per-week weight-sums from the previous round's W1–W5
+breakdown: 4.0, 5.6, 7.6, 8.4, 6.0):
+```
+W1 = 32,305 × 4.0/31.6 = 4,089.24
+W2 = 32,305 × 5.6/31.6 = 5,724.82
+W3 = 32,305 × 7.6/31.6 = 7,772.47
+W4 = 32,305 × 8.4/31.6 = 8,588.29
+W5 = 32,305 × 6.0/31.6 = 6,131.33   (sum ≈ 32,305, rounding)
+```
+Then, starting `carry = 0` (or whatever carried into 30 Sept from
+September, if that matters to you — not computed here), for each week in
+order: `effective_in = carry < 0 ? max(carry, -0.3 × v_raw) : carry`,
+`leftover = carry - effective_in`, `carry := (v_raw + effective_in -
+spent) + leftover`. Whatever `carry` is after W5 (or partway through it,
+for the days already elapsed) — if negative, `month_debt = -carry`, and
+that figure is what November's first week absorbs. Plug the real `spent`
+figures from the query above into this loop in order; I won't guess them.
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the
