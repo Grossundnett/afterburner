@@ -1192,6 +1192,49 @@ cause.
 
 ---
 
+## ITEM 5 — the 31 Oct 2026 plan values
+
+No DB query access in this session, so "seed them" means handing you a
+ready-to-run SQL statement rather than actually running it — pick whichever
+of the two paths below you'd rather use.
+
+**Either run this once** (literal user id, never `auth.uid()`):
+```sql
+insert into spend_month_plans
+  (user_id, month, salary, investments, savings_target, shopping_accrual, category_budgets)
+values (
+  'bff03fd3-1687-487a-b9ce-ef26ba1c553c',
+  '2026-11',
+  100505, 55000, 10000, 5505,
+  '{"Food":1800,"Transport":800,"Fun":3000,"Subscriptions":1000,"Other":4000,"Shopping:Fitness gear":1500,"Shopping:Football":1000,"Shopping:Clothes & shoes":2000,"Shopping:Electronics":1005}'::jsonb
+)
+on conflict (user_id, month) do update set
+  salary = excluded.salary,
+  investments = excluded.investments,
+  savings_target = excluded.savings_target,
+  shopping_accrual = excluded.shopping_accrual,
+  category_budgets = excluded.category_budgets;
+```
+`month = '2026-11'` is correct, not a typo — `cycleMonth()` maps 31 Oct
+(a month's last day) to the *next* calendar month, since the cycle it
+starts runs into November. Confirm with
+`select * from spend_month_plans where user_id = 'bff03fd3-1687-487a-b9ce-ef26ba1c553c' and month = '2026-11';`
+
+**Or enter it by hand** on `/spend/plan` once this cycle governs "today"
+(31 Oct 2026 on — before that, the page still shows October's plan, since
+it always shows whichever cycle governs the current date): Salary
+100505 → Investments 55000 → Savings target 10000 → Shopping accrual
+5505 (discretionary cap should read ₹30,000) → Food 1800 → Transport 800
+→ Fun 3000 → Subscriptions 1000 → Other 4000 → Shopping sub-budgets
+Fitness gear 1500, Football 1000, Clothes & shoes 2000, Electronics 1005
+(sub-budgets total should read ₹5,505, no over-colour) → Save plan.
+
+**Everyday cap is ₹30,000; with Shopping, the total committed each month
+is ₹35,505** (30,000 discretionary + 5,505 into the Shopping fund) — noted
+here and in STATUS.md per your own target framing ("under ₹30-35k").
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the
