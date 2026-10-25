@@ -734,6 +734,61 @@ Chunk C2 (apply across every page, no layout changes, then delete
 
 ---
 
+## FINAL BUILD ROUND — item 2 (keypad + picker lag)
+
+Audited every interactive control in the app that could be called a
+"picker" — the quick-add keypad/chips/emotion picker, `/spend/plan`'s
+amount fields and Balances Update, `/log`'s sport and blocker selects, the
+move/tick/waitlist buttons — for anything that fires a network request,
+`router.*` call, or Server Action on a per-tap basis rather than on a final
+Save. **Found none.** Specifically:
+
+- `QuickAddClient.press()` is `setDigits((d) => (d.length >= 9 ? d : d + key))`
+  — a functional updater, not a read-then-write of the outer `digits`
+  closure. React applies functional updaters in dispatch order against the
+  latest pending value regardless of batching, so rapid taps cannot land
+  out of order from this code — there is no `await`, no network, no
+  `router` call anywhere between one tap and the next. Category chips and
+  the emotion picker are the same pattern (`setCategory`, `setEmotion`).
+  Only the final `Add ₹X` button calls `addExpense` inside
+  `startTransition`.
+- `/log`'s sport and blocker-code controls are plain HTML `<select>`
+  elements with **no `onChange` at all** — there's no JS attached to them
+  that could cause a server round trip; they only submit when the `day`
+  form's Save button is pressed. The only things specific to the sport
+  select are a CSS `:has()` rule hiding the distance field and a stable
+  `key` (changes only when `?edit=` changes via navigation, never per
+  click).
+- Grepped every `startTransition` call in the app (11 call sites): all 11
+  are wired to an explicit action button (Save plan, Update balance,
+  Tick transfer, Cover overspend, Delete expense, Buy/Don't-want on the
+  waitlist, CSV import confirm, Add spend) — none fire from a chip, digit
+  key, or picker's own `onChange`/`onClick` before a deliberate Save.
+
+**What I could not verify without a real phone:** whether this was
+observed against a build from before last round's chunk B push (which
+rewrote quick-add) rather than the current code, since nothing in the
+current code explains the exact symptom. One real, applicable fix either
+way: added `touch-action: manipulation` globally to every `button`/
+`[role="button"]` in `globals.css`. Mobile Safari/Chrome can hold a ~300ms
+"is this a double-tap?" delay before firing `click` on elements without it,
+and under rapid repeated taps (exactly the keypad's use case) that delay
+varying tap-to-tap is a well-documented cause of taps appearing to land
+late or out of order. This costs nothing and is correct regardless of
+whether it was the actual cause here.
+
+**Test, as requested** — done by reading the code, not a live device (no
+phone in this session): tapping `1 2 1 2 1 2` quickly against
+`QuickAddClient.press()`'s functional-updater logic produces `digits =
+"121212"` deterministically, with no code path that could reorder or drop
+a character; reloading resets `digits` to `""` (fresh `useState("")`), and
+one tap of `1` after that produces `"1"`. **Please actually run this test
+on your phone after this deploys** — if it still shows the bug, that's
+new information (a screen recording would help enormously, since nothing
+in the code explains it).
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the

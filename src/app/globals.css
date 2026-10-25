@@ -63,6 +63,15 @@ body {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* Every tap target (keypad digits, chips, buttons) opts out of the browser's
+   own double-tap-to-zoom gesture detection. Without this, some mobile
+   browsers hold a ~300ms "is this a double-tap?" delay before firing click,
+   and under rapid repeated taps (the keypad's main use case) that delay can
+   make taps land out of the order they were made in. Pure CSS, no JS cost. */
+button, [role="button"] {
+  touch-action: manipulation;
+}
+
 /* Sports with no distance (gym, yoga) hide the distance field as soon as one is
    picked. Pure CSS on the selected option, so the entry form stays a Server
    Component with no client JavaScript. Which sports qualify is rendered onto

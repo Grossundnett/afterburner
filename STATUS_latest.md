@@ -3,9 +3,9 @@
 Last updated: final build round. `spend-sprint` merged to `main` and
 `0016_spend_sprint.sql` has run. `0017_final.sql` (day-weighted Unassigned
 fix) is written and pushed; confirm it's been run before trusting
-`/spend/plan`'s Unassigned figure. `0018_categories.sql` (six-category
-model, Shopping sub-budgets) is this round's migration — see this round's
-section below for where things stand.
+`/spend/plan`'s Unassigned figure. This round adds `0018_categories.sql`
+(six-category model, Shopping sub-budgets) — see this round's section below
+for where things stand.
 
 Live at `afterburner-two.vercel.app` · repo `Grossundnett/afterburner` (private)
 Supabase project ref `ijnemkslclmpjhewydkk`, region Mumbai (ap-south-1)
