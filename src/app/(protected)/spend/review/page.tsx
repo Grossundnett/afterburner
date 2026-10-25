@@ -153,18 +153,18 @@ export default async function ReviewPage() {
         <Link href="/spend" className="self-start text-[0.9rem] text-text-muted hover:text-text">
           ← Spend
         </Link>
-        <h1 className="font-spend-display text-[1.3rem] font-bold text-text">Weekly review</h1>
+        <h1 className="glow-text font-spend-display text-[1.3rem] font-bold text-text">Weekly review</h1>
 
         <div className="rounded-2xl border-[1.5px] border-border bg-surface p-4">
           <p className="text-text-muted">This week</p>
-          <p className={`font-spend-display text-[1.8rem] font-bold ${over ? "text-over" : "text-text"}`}>
+          <p className={`font-spend-display tabular-nums text-[1.8rem] font-bold ${over ? "text-over" : "text-text"}`}>
             {money.format(Math.abs(dashboard.budget_left_this_week))} {over ? "over" : "under"}
           </p>
         </div>
 
         <div className="rounded-2xl border-[1.5px] border-border bg-surface p-4">
           <p className="text-text-muted">Leak of the week</p>
-          <p className="font-spend-display text-[1.2rem] font-bold text-text">
+          <p className="font-spend-display tabular-nums text-[1.2rem] font-bold text-text">
             {leakBucket ? `${leakBucket} — ${money.format(leakAmount)} over its weekly share` : "No clear leak"}
           </p>
         </div>

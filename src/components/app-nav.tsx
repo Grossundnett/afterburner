@@ -28,7 +28,7 @@ export function AppNav({ email }: NavProps) {
         aria-label="Main navigation"
       >
         <div className="px-4 py-5">
-          <span className="text-[12px] font-semibold tracking-[0.12em] uppercase text-accent">
+          <span className="glow-text text-[12px] font-semibold tracking-[0.12em] uppercase text-accent">
             Afterburner
           </span>
         </div>
@@ -40,7 +40,7 @@ export function AppNav({ email }: NavProps) {
               href={href}
               className={`relative flex items-center gap-2.5 rounded-md py-2 pl-4 pr-3 text-[14px] transition-colors ${
                 active(href)
-                  ? "text-text"
+                  ? "glow-text text-text"
                   : "text-text-muted hover:text-text"
               }`}
             >
@@ -96,7 +96,7 @@ export function AppNav({ email }: NavProps) {
             key={href}
             href={href}
             className={`flex flex-1 flex-col items-center justify-center gap-[3px] text-[11px] transition-colors ${
-              active(href) ? "text-text" : "text-text-muted"
+              active(href) ? "glow-text text-text" : "text-text-muted"
             }`}
           >
             <Icon

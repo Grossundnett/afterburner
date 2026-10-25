@@ -22,17 +22,27 @@ export function StatusBanner({
   message: string | null;
   cleanUrl: string;
 }) {
-  const [visible, setVisible] = useState(!!message);
   const router = useRouter();
 
+  // "Adjust state during render" (React's own pattern for resetting state
+  // when a prop changes) rather than mirroring `message` into state inside
+  // an effect — a plain synchronous setState at the top of an effect body
+  // causes an avoidable extra render on every message change.
+  const [prevMessage, setPrevMessage] = useState(message);
+  const [hidden, setHidden] = useState(false);
+  if (message !== prevMessage) {
+    setPrevMessage(message);
+    setHidden(false);
+  }
+  const visible = !!message && !hidden;
+
+  // The timer itself is a genuine effect — reacting to time passing, not
+  // mirroring a prop — so it stays here. Its setState call is inside the
+  // timeout callback, not synchronously in the effect body.
   useEffect(() => {
-    if (!message) {
-      setVisible(false);
-      return;
-    }
-    setVisible(true);
+    if (!message) return;
     const t = setTimeout(() => {
-      setVisible(false);
+      setHidden(true);
       router.replace(cleanUrl, { scroll: false });
     }, 2000);
     return () => clearTimeout(t);

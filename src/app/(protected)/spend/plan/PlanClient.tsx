@@ -163,7 +163,7 @@ export function PlanClient({
     <div className="flex flex-col gap-5">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div className="flex items-baseline justify-between">
-          <h1 className="font-spend-display text-[1.3rem] font-bold text-text">{monthLabel}</h1>
+          <h1 className="glow-text font-spend-display text-[1.3rem] font-bold text-text">{monthLabel}</h1>
           <span className="text-[0.9rem] text-text-muted">month plan</span>
         </div>
 
@@ -185,7 +185,7 @@ export function PlanClient({
           />
           <div className="flex justify-between border-t border-border pt-3 text-[0.9rem] font-bold text-text">
             <span>Discretionary cap this cycle</span>
-            <span>{money.format(discretionaryCap)}</span>
+            <span className="tabular-nums">{money.format(discretionaryCap)}</span>
           </div>
         </div>
 
@@ -236,7 +236,7 @@ export function PlanClient({
         {/* Live summary */}
         <div className="rounded-2xl border-[1.5px] border-border bg-surface p-4">
           <h2 className="font-spend-display font-bold text-text">Summary</h2>
-          <div className="mt-3 flex flex-col gap-2 text-[0.9rem]">
+          <div className="mt-3 flex flex-col gap-2 text-[0.9rem] tabular-nums">
             <div className="flex justify-between text-text-muted">
               <span>Salary</span>
               <span>{money.format(n(salary))}</span>
@@ -349,7 +349,7 @@ function BalancesCard({
           <div>
             <label className="text-text">{account}</label>
             {balances[account] != null && (
-              <p className="text-[0.78rem] text-text-muted">
+              <p className="text-[0.78rem] tabular-nums text-text-muted">
                 last recorded {money.format(balances[account])}
               </p>
             )}
@@ -383,7 +383,7 @@ function BalancesCard({
       ))}
 
       {error ? <p className="text-[0.88rem] text-over">{error}</p> : null}
-      {confirmation ? <p className="text-[0.88rem] font-bold text-signal">{confirmation}</p> : null}
+      {confirmation ? <p className="text-[0.88rem] font-bold tabular-nums text-signal">{confirmation}</p> : null}
 
       <label className="flex items-center gap-2 border-t border-border pt-3 text-[0.88rem] text-text-muted">
         <input

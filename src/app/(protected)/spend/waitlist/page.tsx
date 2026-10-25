@@ -47,7 +47,7 @@ export default async function WaitlistPage() {
         <Link href="/spend" className="self-start text-[0.9rem] text-text-muted hover:text-text">
           ← Spend
         </Link>
-        <h1 className="font-spend-display text-[1.3rem] font-bold text-text">48-hour waitlist</h1>
+        <h1 className="glow-text font-spend-display text-[1.3rem] font-bold text-text">48-hour waitlist</h1>
         <WaitlistClient items={items} savedByWaiting={savedByWaiting} />
       </div>
     </main>

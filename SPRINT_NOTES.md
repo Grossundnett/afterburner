@@ -962,6 +962,94 @@ figures from the query above into this loop in order; I won't guess them.
 
 ---
 
+## FINAL BUILD ROUND — item 7 (theme rollout + design-guidelines review)
+
+### Theme rollout
+
+- `--signal` (ahead of pace, targets/goals/today) moved from amber `#F5C542`
+  to ember orange `#FF7A1A`, in `globals.css` only — every consumer reads
+  the variable, so this one edit recolours the "Log today" button, the
+  pace-tick marks, the "ahead of pace" bar fill, and the active-day marker
+  everywhere at once. `--warn` (the contribution grid's "blocked" state)
+  stays its own yellow (`#FBBF24`) on purpose — a different meaning, kept
+  clear of the new orange so the two don't start reading as the same thing.
+- Crimson stays reserved on `/spend` for "over" only — unchanged, already
+  true before this round.
+- Added `.glow-text` to the real nav and headings, matching exactly what
+  the approved preview showed (nowhere beyond that — glow is "headings,
+  hero numbers, active nav" only, never body text): `AppNav`'s brand label
+  and active link (desktop sidebar + mobile bottom bar), the spend hero
+  number (only when *not* over — crimson "over" text doesn't also get a
+  cyan glow halo, since `.glow-text`'s shadow colour is always `--accent`,
+  not whatever colour the text itself is), and the top `<h1>` on every page
+  that has one (`/log`, `/days`, `/spend/plan`, `/spend/review`,
+  `/spend/waitlist`).
+- Confirmed with a hand contrast check (WCAG relative-luminance formula,
+  not a tool — no browser in this session) that all three accents clear AA
+  comfortably against the shared near-black background: ember orange
+  `#FF7A1A` ≈ 7.7:1, crimson `#FF2E4D` ≈ 5.5:1, cyan `#22D3EE` ≈ 11.2:1 —
+  all well above the 4.5:1 normal-text floor, so the glow treatment isn't
+  compensating for a contrast problem anywhere.
+- Deleted `/theme-preview` (page + its `proxy.ts` public-path entry) now
+  that the direction's approved and rolled out.
+
+### web-design-guidelines review — findings and fixes
+
+Ran the skill against `src/app` and `src/components`. Real, pre-existing
+issues found and fixed (none of these were introduced by this round's
+other changes, except where noted):
+
+1. **Delete-expense errors were silently swallowed** —
+   `SpendClient.tsx`: `handleDelete` has called `setFormError` since
+   chunk B, but chunk B's form-removal deleted the only place that
+   rendered it. Fixed: the error now shows above "Every spend this week".
+   *(Introduced by last round's chunk B — caught by this review, not
+   before.)*
+2. **Components created during render** — `CSVImportClient.tsx`:
+   `SummaryRow` was defined inside the preview step's render body, a new
+   function identity every render (React treats it as unmount+remount
+   each time). Moved to module scope.
+3. **Reading a ref's value during render** — `CSVImportClient.tsx`:
+   `fileRef.current?.files?.[0]?.name` was read directly in JSX, which
+   doesn't re-render reactively when a file is chosen (only works by
+   accident, via a sibling state update happening to re-render this
+   component too). Replaced with a `fileName` state set from the file
+   input's own `onChange`.
+4. **`setState` synchronously in an effect body** — `status-banner.tsx`:
+   `useEffect` mirrored `!!message` into `visible` state on every change,
+   an avoidable extra render. Refactored to React's own recommended
+   pattern — adjust state during render when a prop changes, keep the
+   effect only for the genuine async part (the 2s auto-hide timer).
+5. **Unescaped `"` / `'` in JSX text** (`react/no-unescaped-entities`) —
+   `CSVImportClient.tsx` (two spots, now curly quotes `&ldquo;…&rdquo;` —
+   also satisfies the typography guideline's curly-quotes rule, not just
+   silencing the lint error) and `contribution-grid.tsx` (`&apos;`).
+6. **Missing `tabular-nums` on money figures** — audited every
+   `money.format(...)` call site (43 of them) against `tabular-nums`
+   coverage (37 before this pass). Added it to the seven that lacked it:
+   `/spend/plan`'s whole Summary panel, the discretionary-cap line, the
+   "last recorded" balance line, the balance-save confirmation line,
+   `/spend/review`'s two hero figures, `/spend/waitlist`'s "saved by
+   waiting" figure and both item-price lines, and three spots in
+   `CSVImportClient.tsx` (ghost rows, manual-collision rows, the
+   reconciliation difference line).
+7. **Icon-only button with no accessible name** — the quick-add keypad's
+   `⌫` key had no `aria-label`; a screen reader would read the raw glyph.
+   Added `aria-label="Backspace"`.
+
+**Checked and already compliant, no change needed:** focus-visible rings
+(every interactive control already uses the shared `focusRing` constant —
+none bypass it with a bare `outline-none`), `prefers-reduced-motion`
+(already gated on `/spend`'s bar-fill/grid animations; the new
+`.glow-text` is a static shadow, not motion, so it's correctly *not*
+gated), `touch-action` (added last item, still correct), no `transition:
+all` anywhere, no hardcoded hex colours outside `globals.css` (grepped the
+whole `src/` tree — zero hits), existing nav-arrow and delete-button
+`aria-label`s (previous and next day/week, delete an expense) were already
+present.
+
+---
+
 ## FINAL CHECKLIST — do these in order
 
 1. **Run `supabase/migrations/0016_spend_sprint.sql` once, in full, in the

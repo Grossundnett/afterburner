@@ -289,7 +289,7 @@ export function ContributionGrid({
         </span>
       </div>
       <p className="mt-1.5 font-mono text-[10px] text-text-muted">
-        Hover a cell for details · blocked = logged a blocker but didn't train
+        Hover a cell for details · blocked = logged a blocker but didn&apos;t train
       </p>
     </section>
   );

@@ -118,7 +118,7 @@ export default async function DaysPage({
     <main data-sport="discipline" className="flex flex-1 justify-center p-5">
       <div className="flex w-full max-w-md flex-col gap-5">
         <div className="flex flex-col gap-2">
-          <h1 className="text-[24px] font-semibold tracking-tight text-text">
+          <h1 className="glow-text text-[24px] font-semibold tracking-tight text-text">
             {atToday ? "Last 30 days" : "30 days"}
           </h1>
           <p className={`font-mono ${muted}`}>

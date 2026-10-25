@@ -89,10 +89,15 @@ button, [role="button"] {
 }
 
 /* --signal marks targets, goals and today, and (on /spend) "ahead of pace".
-   Amber, shared across both app halves — distinct from every sport accent
-   and from --accent itself, so it reads as "system", not "activity". */
+   Ember orange, shared across both app halves — distinct from every sport
+   accent and from --accent itself, so it reads as "system", not
+   "activity". Was amber (#F5C542); moved to ember orange after the theme
+   round's approval, same meaning, same reservation on /spend (never
+   decorative there — only "ahead of pace"). --warn (below) stays its own
+   yellow — a different meaning (a blocked day), kept clear of this hue on
+   purpose. */
 :root {
-  --signal: #F5C542;
+  --signal: #FF7A1A;
 }
 
 @theme inline {

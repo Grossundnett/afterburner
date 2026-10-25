@@ -144,7 +144,7 @@ export default async function LogPage({
       <div className="flex w-full max-w-md flex-col gap-6">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <h1 className="text-[24px] font-semibold tracking-tight text-text">
+            <h1 className="glow-text text-[24px] font-semibold tracking-tight text-text">
               Log a day
             </h1>
 

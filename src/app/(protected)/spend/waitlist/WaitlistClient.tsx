@@ -74,7 +74,7 @@ export function WaitlistClient({
     <div className="flex flex-col gap-6">
       <div className="rounded-2xl border-[1.5px] border-border bg-surface p-4">
         <p className="text-text-muted">Saved by waiting</p>
-        <p className="font-spend-display text-[1.6rem] font-bold text-signal">
+        <p className="font-spend-display tabular-nums text-[1.6rem] font-bold text-signal">
           {money.format(savedByWaiting)}
         </p>
       </div>
@@ -91,7 +91,7 @@ export function WaitlistClient({
             >
               <div>
                 <p className="text-text">{i.item}</p>
-                <p className="text-[0.85rem] text-text-muted">{money.format(i.price)}</p>
+                <p className="text-[0.85rem] tabular-nums text-text-muted">{money.format(i.price)}</p>
               </div>
               <div className="flex gap-2">
                 <DontWantIt id={i.id} />
@@ -119,7 +119,7 @@ export function WaitlistClient({
             >
               <div>
                 <p className="text-text">{i.item}</p>
-                <p className="text-[0.85rem] text-text-muted">{money.format(i.price)}</p>
+                <p className="text-[0.85rem] tabular-nums text-text-muted">{money.format(i.price)}</p>
                 <p className="text-[0.78rem] text-text-muted">{Math.ceil(hoursLeft(i.added_at))}h until unlocked</p>
               </div>
               <DontWantIt id={i.id} />

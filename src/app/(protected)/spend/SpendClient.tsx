@@ -421,7 +421,7 @@ export function SpendClient({
               <>
                 <p
                   className={`font-spend-display font-extrabold leading-[0.95] tracking-[-0.03em] text-[clamp(3rem,13vw,5.4rem)] ${
-                    over ? "text-over" : "text-text"
+                    over ? "text-over" : "glow-text text-text"
                   }`}
                 >
                   {money.format(Math.abs(heroValue))}
@@ -649,6 +649,7 @@ export function SpendClient({
       {/* Every spend this week */}
       <div className="flex flex-col gap-4">
         <h2 className="font-spend-display text-[1.15rem] font-bold text-text">Every spend this week</h2>
+        {formError ? <p className="text-[0.88rem] text-over">{formError}</p> : null}
 
         {dayKeys.length === 0 ? (
           <p className="text-text-muted">Log your first spend above. Small ones count too.</p>

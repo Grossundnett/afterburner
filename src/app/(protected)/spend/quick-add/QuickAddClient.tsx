@@ -203,6 +203,7 @@ export function QuickAddClient({ today, categories }: { today: string; categorie
             key={i}
             type="button"
             disabled={key === ""}
+            aria-label={key === "⌫" ? "Backspace" : undefined}
             onClick={() => press(key)}
             className={`rounded-xl border-[1.5px] border-border py-4 font-spend-display text-[1.4rem] font-bold text-text ${focusRing} ${
               key === "" ? "invisible" : "hover:border-accent"

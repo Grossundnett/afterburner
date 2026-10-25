@@ -35,6 +35,20 @@ function dmonRange(start: string, end: string) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
+/** Module-level, not declared inside the preview step's render — a
+ * component defined inside a render body is a new function identity every
+ * render, which React treats as unmounting and remounting it each time. */
+function SummaryRow({ label, count, total }: { label: string; count: number; total?: number }) {
+  return (
+    <div className="flex justify-between text-[0.9rem]">
+      <span className="text-text-muted">{label}</span>
+      <span className="tabular-nums text-text">
+        {count} rows{total != null ? ` · ${money.format(total)}` : ""}
+      </span>
+    </div>
+  );
+}
+
 export function CSVImportClient() {
   const [tab, setTab] = useState<"upload" | "paste">("upload");
   const [pasteText, setPasteText] = useState("");
@@ -43,6 +57,7 @@ export function CSVImportClient() {
   const [result, setResult] = useState<CommitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [fileName, setFileName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function handlePreview() {
@@ -117,14 +132,14 @@ export function CSVImportClient() {
           >
             <span className="text-[2rem]">📂</span>
             <p className="text-[0.9rem] text-text-muted">
-              {fileRef.current?.files?.[0]?.name ?? "Tap to choose a .csv file"}
+              {fileName ?? "Tap to choose a .csv file"}
             </p>
             <input
               ref={fileRef}
               type="file"
               accept=".csv,text/csv"
               className="sr-only"
-              onChange={() => setError(null)}
+              onChange={(e) => { setError(null); setFileName(e.target.files?.[0]?.name ?? null); }}
             />
           </div>
         ) : (
@@ -160,15 +175,6 @@ export function CSVImportClient() {
     const investCount = preview.moneyMoves.filter((m) => m.kind === "investment").length;
     const moneyMoveCount = preview.moneyMoves.length;
     const expenseCount = preview.expenses.length;
-
-    const SummaryRow = ({ label, count, total }: { label: string; count: number; total?: number }) => (
-      <div className="flex justify-between text-[0.9rem]">
-        <span className="text-text-muted">{label}</span>
-        <span className="tabular-nums text-text">
-          {count} rows{total != null ? ` · ${money.format(total)}` : ""}
-        </span>
-      </div>
-    );
 
     return (
       <div className="flex flex-col gap-5">
@@ -220,7 +226,7 @@ export function CSVImportClient() {
               file. They are not deleted — review manually if needed.
             </p>
             {preview.ghosts.slice(0, 5).map((g) => (
-              <div key={`${g.source_ts}|${g.account}`} className="text-[0.85rem] text-text-muted">
+              <div key={`${g.source_ts}|${g.account}`} className="tabular-nums text-[0.85rem] text-text-muted">
                 {g.source_ts.slice(0, 10)} · {g.account} · {money.format(g.amount)} · {g.category}
               </div>
             ))}
@@ -244,9 +250,9 @@ export function CSVImportClient() {
             </p>
             {preview.collisions.slice(0, 5).map((c, i) => (
               <div key={i} className="text-[0.85rem]">
-                <span className="text-text-muted">{c.date} · {money.format(c.amount)}</span>
-                {c.manualNote ? <span className="ml-2 text-text">manual: "{c.manualNote}"</span> : null}
-                {c.expense.note ? <span className="ml-2 text-text-muted">csv: "{c.expense.note}"</span> : null}
+                <span className="tabular-nums text-text-muted">{c.date} · {money.format(c.amount)}</span>
+                {c.manualNote ? <span className="ml-2 text-text">manual: &ldquo;{c.manualNote}&rdquo;</span> : null}
+                {c.expense.note ? <span className="ml-2 text-text-muted">csv: &ldquo;{c.expense.note}&rdquo;</span> : null}
               </div>
             ))}
           </div>
@@ -320,7 +326,7 @@ export function CSVImportClient() {
           </div>
           {!result.reconciled && (
             <p className="text-[0.85rem] text-over">
-              Difference: {money.format(Math.abs(result.dbExpenseTotal - result.parseExpenseTotal))}.
+              Difference: <span className="tabular-nums">{money.format(Math.abs(result.dbExpenseTotal - result.parseExpenseTotal))}</span>.
               This can happen if the range overlaps a previous import with different rows. Check
               for ghost rows or manual entries in the same period.
             </p>
