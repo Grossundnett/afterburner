@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { Atkinson_Hyperlegible, Bricolage_Grotesque } from "next/font/google";
 
 const bricolage = Bricolage_Grotesque({
@@ -20,6 +21,7 @@ const atkinson = Atkinson_Hyperlegible({
  * themed on top of the other.
  */
 export default function SpendLayout({ children }: { children: React.ReactNode }) {
+  redirect("/");
   return (
     <div
       data-spend

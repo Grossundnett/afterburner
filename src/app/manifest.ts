@@ -18,7 +18,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Afterburner",
     short_name: "Afterburner",
     description: "Personal multi-sport training tracker",
-    start_url: "/spend/quick-add",
+    start_url: "/log",
     display: "standalone",
     background_color: "#121A17",
     theme_color: "#121A17",

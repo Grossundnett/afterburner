@@ -109,7 +109,18 @@ save ten seconds a day).
 
 ---
 
-## 5. Spend side — current shape
+## 5. Spend side — FROZEN
+
+**Spend tab frozen on 2026-10-26.** Spending is now tracked in the Wallet app
+(BudgetBakers), connected to Claude via the Wallet MCP connector. Code and
+tables are kept for reference; do not build on `/spend`.
+
+The nav link is hidden, all `/spend` routes redirect to `/`, and the PWA
+`start_url` points at `/log`. Nothing was deleted.
+
+---
+
+## 5a. Spend side — original shape (archived)
 
 **`SPEND_RESEARCH.md` is still the source of truth**, modified by §3 above.
 One hero number, a real weekly partition, targeted friction on two leaks,

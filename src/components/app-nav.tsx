@@ -10,7 +10,6 @@ type NavProps = { email?: string };
 const NAV_LINKS = [
   { href: "/", label: "Panel", Icon: GridIcon },
   { href: "/days", label: "Days", Icon: CalendarIcon },
-  { href: "/spend", label: "Spend", Icon: CardIcon },
 ] as const;
 
 export function AppNav({ email }: NavProps) {
